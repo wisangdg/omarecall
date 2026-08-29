@@ -32,6 +32,10 @@ Item {
 
   readonly property var selectedSession: selectedIndex >= 0 && selectedIndex < sessions.length
     ? sessions[selectedIndex] : null
+  readonly property string selectedSessionId: selectedSession
+    ? String(selectedSession.id) : ""
+  readonly property string selectedSessionStatus: selectedSession
+    ? String(selectedSession.status) : ""
   readonly property color background: Color.menu.background
   readonly property color foreground: Color.menu.text
   readonly property color border: Color.menu.border
@@ -729,7 +733,7 @@ Item {
               }
               Ui.Button {
                 text: "Complete"
-                enabled: !root.busy && root.selectedSession.status === "active"
+                enabled: !root.busy && root.selectedSessionStatus === "active"
                 focusable: true
                 foreground: root.foreground
                 Accessible.role: Accessible.Button
@@ -738,7 +742,8 @@ Item {
               }
               Ui.Button {
                 text: "Archive"
-                enabled: !root.busy && root.selectedSession.status !== "archived"
+                enabled: !root.busy && root.selectedSessionStatus !== ""
+                  && root.selectedSessionStatus !== "archived"
                 focusable: true
                 foreground: root.foreground
                 Accessible.role: Accessible.Button
@@ -746,16 +751,16 @@ Item {
                 onClicked: root.archiveSelected()
               }
               Ui.Button {
-                text: root.deleteConfirmId === String(root.selectedSession.id)
+                text: root.deleteConfirmId === root.selectedSessionId
                   ? "Confirm delete" : "Delete"
                 enabled: !root.busy
                 focusable: true
-                bordered: root.deleteConfirmId === String(root.selectedSession.id)
-                foreground: root.deleteConfirmId === String(root.selectedSession.id)
+                bordered: root.deleteConfirmId === root.selectedSessionId
+                foreground: root.deleteConfirmId === root.selectedSessionId
                   ? root.urgent : root.foreground
                 Accessible.role: Accessible.Button
                 Accessible.name: text + " selected session"
-                Accessible.description: root.deleteConfirmId === String(root.selectedSession.id)
+                Accessible.description: root.deleteConfirmId === root.selectedSessionId
                   ? "Permanent deletion. Press again to confirm." : "Requires a second confirmation"
                 onClicked: root.deleteSelected()
               }
