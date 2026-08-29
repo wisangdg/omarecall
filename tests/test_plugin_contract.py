@@ -43,3 +43,5 @@ class PluginContractTests(TestCase):
         self.assertIn('Accessible.name: "Browse project directory"', panel)
         self.assertIn("property bool reopenAfterPicker", panel)
         self.assertIn("directoryPickerLaunchTimer.restart()", panel)
+        self.assertIn('Quickshell.env("OMARECALL_DEFAULT_PROJECT")', panel)
+        self.assertIn('text: root.defaultProjectDirectory', panel)

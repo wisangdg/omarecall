@@ -15,6 +15,11 @@ Item {
     return decodeURIComponent(url.replace(/^file:\/\//, "")).replace(/\/$/, "")
   }
   readonly property string cli: pluginDir + "/bin/omarecall"
+  readonly property string defaultProjectDirectory: {
+    var configured = String(Quickshell.env("OMARECALL_DEFAULT_PROJECT") || "").trim()
+    if (configured !== "") return configured
+    return String(Quickshell.env("HOME") || "") + "/development/projects"
+  }
 
   property var shell: null
   property bool opened: false
@@ -679,6 +684,7 @@ Item {
               Ui.TextField {
                 id: projectInput
                 width: parent.width - browseButton.width - parent.spacing
+                text: root.defaultProjectDirectory
                 placeholderText: "/path/to/project"
                 foreground: root.foreground
                 Accessible.name: "Project directory"
