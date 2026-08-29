@@ -41,3 +41,5 @@ class PluginContractTests(TestCase):
         self.assertIn('"omarchy-file-select"', panel)
         self.assertIn('"--directory"', panel)
         self.assertIn('Accessible.name: "Browse project directory"', panel)
+        self.assertIn("property bool reopenAfterPicker", panel)
+        self.assertIn("directoryPickerLaunchTimer.restart()", panel)

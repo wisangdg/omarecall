@@ -29,6 +29,7 @@ Item {
   property string errorText: ""
   property string noticeText: ""
   property string deleteConfirmId: ""
+  property bool reopenAfterPicker: false
 
   readonly property var selectedSession: selectedIndex >= 0 && selectedIndex < sessions.length
     ? sessions[selectedIndex] : null
@@ -64,7 +65,8 @@ Item {
   }
 
   function close() {
-    if (!root.opened) return
+    if (!root.opened && !root.reopenAfterPicker) return
+    root.reopenAfterPicker = false
     root.opened = false
     root.deleteConfirmId = ""
     if (root.shell && typeof root.shell.hide === "function")
@@ -114,11 +116,11 @@ Item {
   }
 
   function browseProjectDirectory() {
-    if (directoryPicker.running) return
+    if (directoryPicker.running || directoryPickerLaunchTimer.running) return
     root.errorText = ""
-    directoryPicker.command = ["omarchy-file-select", "--title",
-                               "Choose an OmaRecall project", "--directory"]
-    directoryPicker.running = true
+    root.reopenAfterPicker = true
+    root.opened = false
+    directoryPickerLaunchTimer.restart()
   }
 
   function beginPreview(mode) {
@@ -252,6 +254,12 @@ Item {
     stdout: StdioCollector { id: directoryOut; waitForEnd: true }
     stderr: StdioCollector { id: directoryErr; waitForEnd: true }
     onExited: function(code) {
+      var shouldReopen = root.reopenAfterPicker
+      root.reopenAfterPicker = false
+      if (shouldReopen) {
+        root.opened = true
+        Qt.callLater(function() { keyCatcher.forceActiveFocus() })
+      }
       if (code === 1) return
       if (code !== 0) {
         root.errorText = root.commandError(directoryErr.text,
@@ -262,6 +270,17 @@ Item {
       if (selectedPath === "") return
       projectInput.text = selectedPath
       goalInput.forceActiveFocus()
+    }
+  }
+
+  Timer {
+    id: directoryPickerLaunchTimer
+    interval: 100
+    repeat: false
+    onTriggered: {
+      directoryPicker.command = ["omarchy-file-select", "--title",
+                                 "Choose an OmaRecall project", "--directory"]
+      directoryPicker.running = true
     }
   }
 
