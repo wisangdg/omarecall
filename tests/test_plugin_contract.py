@@ -34,3 +34,10 @@ class PluginContractTests(TestCase):
         self.assertNotIn("bash -c", sources)
         self.assertNotIn("sh -c", sources)
         self.assertNotIn("shell: true", sources)
+
+    def test_panel_uses_native_omarchy_directory_picker(self) -> None:
+        panel = (self.root / "Panel.qml").read_text()
+
+        self.assertIn('"omarchy-file-select"', panel)
+        self.assertIn('"--directory"', panel)
+        self.assertIn('Accessible.name: "Browse project directory"', panel)

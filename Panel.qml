@@ -113,6 +113,14 @@ Item {
     showProcess.running = true
   }
 
+  function browseProjectDirectory() {
+    if (directoryPicker.running) return
+    root.errorText = ""
+    directoryPicker.command = ["omarchy-file-select", "--title",
+                               "Choose an OmaRecall project", "--directory"]
+    directoryPicker.running = true
+  }
+
   function beginPreview(mode) {
     root.errorText = ""
     root.noticeText = ""
@@ -235,6 +243,25 @@ Item {
       } catch (error) {
         root.errorText = "OmaRecall returned invalid session data."
       }
+    }
+  }
+
+  Process {
+    id: directoryPicker
+    command: []
+    stdout: StdioCollector { id: directoryOut; waitForEnd: true }
+    stderr: StdioCollector { id: directoryErr; waitForEnd: true }
+    onExited: function(code) {
+      if (code === 1) return
+      if (code !== 0) {
+        root.errorText = root.commandError(directoryErr.text,
+                                           "Could not open the project directory picker.")
+        return
+      }
+      var selectedPath = String(directoryOut.text || "").trim()
+      if (selectedPath === "") return
+      projectInput.text = selectedPath
+      goalInput.forceActiveFocus()
     }
   }
 
@@ -626,13 +653,32 @@ Item {
               font.family: root.fontFamily
               font.pixelSize: Style.font.caption
             }
-            Ui.TextField {
-              id: projectInput
+            Row {
               width: parent.width
-              placeholderText: "/path/to/project"
-              foreground: root.foreground
-              Accessible.name: "Project directory"
-              Accessible.description: "Directory where the new agent will start"
+              spacing: Style.space(7)
+
+              Ui.TextField {
+                id: projectInput
+                width: parent.width - browseButton.width - parent.spacing
+                placeholderText: "/path/to/project"
+                foreground: root.foreground
+                Accessible.name: "Project directory"
+                Accessible.description: "Directory where the new agent will start"
+              }
+
+              Ui.Button {
+                id: browseButton
+                width: Style.space(92)
+                text: directoryPicker.running ? "Opening…" : "Browse…"
+                enabled: !directoryPicker.running
+                focusable: true
+                bordered: true
+                foreground: root.foreground
+                Accessible.role: Accessible.Button
+                Accessible.name: "Browse project directory"
+                Accessible.description: "Choose the project folder using the system file picker"
+                onClicked: root.browseProjectDirectory()
+              }
             }
 
             Text {
