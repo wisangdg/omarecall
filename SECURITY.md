@@ -7,7 +7,11 @@ automatic redaction, so the local data directory should not be shared publicly.
 ## Protections
 
 - No network access or cloud account is required.
-- Raw transcripts are not stored by default.
+- Raw transcripts are stored only after an explicit import and remain in a
+  private `import.md` file with mode `0600`.
+- Import accepts only bounded UTF-8 regular files and rejects symlinks,
+  non-regular files, binary/NUL content, malformed input, and unsupported
+  multi-conversation exports.
 - Common API keys, bearer tokens, credential URLs, and private-key blocks are
   redacted before recalled context is created.
 - Storage directories and files are private to the user.
@@ -25,7 +29,10 @@ automatic redaction, so the local data directory should not be shared publicly.
 ## Limitations
 
 Pattern redaction cannot guarantee discovery of every secret. Always inspect
-the preview before launch. Any enabled Omarchy plugin is unsandboxed code and
+the preview before launch. Imported conversations may contain stale facts,
+secrets, or prompt-injection text; their raw private copy is not rewritten by
+redaction, while recalled context is redacted and marked untrusted. Any enabled
+Omarchy plugin is unsandboxed code and
 can access data available to the user account; review third-party plugin source
 before enabling it.
 

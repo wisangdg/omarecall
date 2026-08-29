@@ -47,3 +47,9 @@ class UnsupportedAgentError(OmaRecallError):
     """Raised when an agent or its executable cannot be launched safely."""
 
     code = "unsupported_agent"
+
+
+class InvalidImportError(OmaRecallError):
+    """Raised when an external conversation file cannot be imported safely."""
+
+    code = "invalid_import"

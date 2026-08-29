@@ -152,3 +152,55 @@ class CliTests(TestCase):
         self.assertTrue(pinned["session"]["pinned"])
         self.assertEqual(0, delete_code)
         self.assertEqual(session_id, deleted["deleted_session_id"])
+
+    def test_import_conversation_creates_completed_recallable_session(self) -> None:
+        source = Path(self.temp_dir) / "outside-conversation.md"
+        source.write_text("**User:** Continue the dashboard\n\n**Assistant:** Add tests first\n")
+
+        import_code, imported = self.run_cli(
+            "import",
+            "--file",
+            str(source),
+            "--project",
+            str(self.project_dir),
+        )
+        session_id = str(imported["session"]["id"])
+        show_code, shown = self.run_cli(
+            "session", "show", session_id, "--max-import-chars", "20"
+        )
+        context_code, context = self.run_cli(
+            "context",
+            "build",
+            "--mode",
+            "session",
+            "--session-id",
+            session_id,
+            "--max-tokens",
+            "1000",
+        )
+
+        self.assertEqual(0, import_code)
+        self.assertEqual("completed", imported["session"]["status"])
+        self.assertEqual("outside-conversation.md", imported["import"]["source_name"])
+        self.assertEqual("markdown", imported["import"]["format"])
+        self.assertEqual(0, show_code)
+        self.assertTrue(str(shown["session"]["imported_conversation"]).endswith(
+            "[IMPORT TRUNCATED]"
+        ))
+        self.assertEqual(0, context_code)
+        self.assertIn("Continue the dashboard", context["context"]["packet"])
+
+    def test_import_error_is_machine_readable(self) -> None:
+        source = Path(self.temp_dir) / "broken.json"
+        source.write_text("{not json")
+
+        exit_code, output = self.run_cli(
+            "import",
+            "--file",
+            str(source),
+            "--project",
+            str(self.project_dir),
+        )
+
+        self.assertEqual(2, exit_code)
+        self.assertEqual("invalid_import", output["error"]["code"])

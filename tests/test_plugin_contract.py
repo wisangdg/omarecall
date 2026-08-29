@@ -46,3 +46,19 @@ class PluginContractTests(TestCase):
         self.assertIn('Quickshell.env("OMARECALL_DEFAULT_PROJECT")', panel)
         self.assertIn('text: root.defaultProjectDirectory', panel)
         self.assertNotIn('"/development/projects"', panel)
+
+    def test_panel_imports_external_conversations_with_native_file_picker(self) -> None:
+        panel = (self.root / "Panel.qml").read_text()
+
+        self.assertIn('text: importPicker.running ? "Opening…" : "Import conversation…"', panel)
+        self.assertIn('Accessible.name: "Import an external AI conversation"', panel)
+        self.assertIn('"--extensions", "md txt json"', panel)
+        self.assertIn("conversationPickerLaunchTimer.restart()", panel)
+        self.assertIn(
+            '[root.cli, "import", "--file", selectedPath, "--project",',
+            panel,
+        )
+        self.assertIn('"--max-import-chars", "200000"', panel)
+        self.assertIn("root.detail.imported_conversation", panel)
+        self.assertIn("importOut.text", panel)
+        self.assertIn("summary.warnings", panel)

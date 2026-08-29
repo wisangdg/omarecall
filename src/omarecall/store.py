@@ -26,6 +26,9 @@ VALID_SESSION_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 VALID_STATUS = {"active", "completed", "interrupted", "archived"}
 NOTE_SECTIONS = ("Goal", "Completed", "Decisions", "Pending", "Files", "Warnings")
 MAX_STORE_FILE_BYTES = 4 * 1024 * 1024
+MAX_IMPORTED_TRANSCRIPT_BYTES = 2 * 1024 * 1024
+MAX_IMPORTED_TITLE_CHARS = 200
+VALID_SOURCE_FORMAT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+_-]{0,31}$")
 
 
 def _utc_now() -> datetime:
@@ -71,6 +74,8 @@ class SessionMetadata:
     created_at: datetime
     updated_at: datetime
     pinned: bool = False
+    source_name: str | None = None
+    source_format: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
         result = asdict(self)
@@ -105,6 +110,24 @@ class SessionMetadata:
             raise StoreCorruptError(f"Invalid stored session ID: {value['id']}")
         if not VALID_SESSION_ID.fullmatch(str(value["project_id"])):
             raise StoreCorruptError(f"Invalid stored project ID: {value['project_id']}")
+        source_name = value.get("source_name")
+        source_format = value.get("source_format")
+        if (source_name is None) != (source_format is None):
+            raise StoreCorruptError("Imported session provenance is incomplete")
+        if source_name is not None:
+            if (
+                not isinstance(source_name, str)
+                or not source_name
+                or source_name != Path(source_name).name
+                or "/" in source_name
+                or "\\" in source_name
+                or any(ord(character) < 32 for character in source_name)
+            ):
+                raise StoreCorruptError("Invalid imported session source name")
+            if not isinstance(source_format, str) or not VALID_SOURCE_FORMAT.fullmatch(
+                source_format
+            ):
+                raise StoreCorruptError("Invalid imported session source format")
         return cls(
             id=str(value["id"]),
             schema_version=int(value["schema_version"]),
@@ -117,6 +140,8 @@ class SessionMetadata:
             created_at=_parse_time(str(value["created_at"])),
             updated_at=_parse_time(str(value["updated_at"])),
             pinned=bool(value.get("pinned", False)),
+            source_name=source_name,
+            source_format=source_format,
         )
 
 
@@ -203,6 +228,83 @@ class SessionStore:
         self._upsert_index(metadata)
         return metadata
 
+    def create_imported_session(
+        self,
+        *,
+        project_path: Path | str,
+        title: str,
+        transcript: str,
+        source_name: str,
+        source_format: str,
+        now: datetime | None = None,
+        session_id: str | None = None,
+    ) -> SessionMetadata:
+        """Create a completed external session backed by a private transcript."""
+        title = self._import_title(title)
+        if not isinstance(transcript, str) or not transcript.strip():
+            raise InvalidSessionError("transcript must not be empty")
+        if "\x00" in transcript:
+            raise InvalidSessionError("transcript must not contain NUL bytes")
+        if len(transcript.encode("utf-8")) > MAX_IMPORTED_TRANSCRIPT_BYTES:
+            raise InvalidSessionError("transcript must not exceed 2 MiB")
+        safe_source_name = self._source_basename(source_name)
+        safe_source_format = _require_text("source_format", source_format).lower()
+        if not VALID_SOURCE_FORMAT.fullmatch(safe_source_format):
+            raise InvalidSessionError("source_format contains unsafe characters")
+
+        self.initialize()
+        project_id, project_name, resolved_project = self.project_identity(project_path)
+        timestamp = (now or _utc_now()).astimezone(UTC)
+        generated_id = session_id or self._new_session_id(timestamp)
+        self._validate_session_id(generated_id)
+        if any(item.id == generated_id for item in self.list_sessions()):
+            raise SessionExistsError(f"Session already exists: {generated_id}")
+
+        session_dir = self._session_dir(project_id, generated_id)
+        if session_dir.exists():
+            raise SessionExistsError(f"Session already exists: {generated_id}")
+        self._secure_mkdir(session_dir.parent)
+        staging_dir = session_dir.parent / (
+            f".{generated_id}.import-{secrets.token_hex(6)}"
+        )
+        self._secure_mkdir(staging_dir)
+        metadata = SessionMetadata(
+            id=generated_id,
+            schema_version=SCHEMA_VERSION,
+            project_id=project_id,
+            project_name=project_name,
+            project_path=str(resolved_project),
+            agent="external",
+            title=title,
+            status="completed",
+            created_at=timestamp,
+            updated_at=timestamp,
+            pinned=False,
+            source_name=safe_source_name,
+            source_format=safe_source_format,
+        )
+        sections = {name: [] for name in NOTE_SECTIONS}
+        sections["Goal"] = [f"Imported conversation: {title}"]
+        sections["Completed"] = [
+            f"Imported from {safe_source_name} ({safe_source_format})"
+        ]
+        try:
+            self._atomic_write(staging_dir / "import.md", transcript)
+            self._write_json(staging_dir / "meta.json", metadata.to_dict())
+            self._atomic_write(
+                staging_dir / "note.md", self._render_note(metadata, sections)
+            )
+            if session_dir.exists() or session_dir.is_symlink():
+                raise SessionExistsError(f"Session already exists: {generated_id}")
+            os.replace(staging_dir, session_dir)
+            self._upsert_project(metadata)
+            self._upsert_index(metadata)
+        except BaseException:
+            self._cleanup_import_session(staging_dir)
+            self._cleanup_import_session(session_dir)
+            raise
+        return metadata
+
     @staticmethod
     def project_identity(project_path: Path | str) -> tuple[str, str, Path]:
         """Return the stable ID, display slug, and resolved path for a project."""
@@ -240,6 +342,28 @@ class SessionStore:
         except FileNotFoundError as exc:
             raise StoreCorruptError(f"Session note is missing: {session_id}") from exc
         return metadata, self._parse_note(note)
+
+    def get_imported_conversation(
+        self, session_id: str, *, max_chars: int | None = None
+    ) -> str | None:
+        """Return an imported transcript, or ``None`` for a native session."""
+        metadata, session_dir = self._find_session(session_id)
+        if metadata.source_name is None:
+            return None
+        if max_chars is not None and max_chars < 0:
+            raise InvalidSessionError("max_chars must not be negative")
+        import_path = session_dir / "import.md"
+        try:
+            transcript = self._read_regular_text(
+                import_path, max_bytes=MAX_IMPORTED_TRANSCRIPT_BYTES
+            )
+        except FileNotFoundError as exc:
+            raise StoreCorruptError(
+                f"Imported conversation is missing: {session_id}"
+            ) from exc
+        if max_chars is None:
+            return transcript
+        return transcript[:max_chars]
 
     def save_context_packet(self, session_id: str, packet: str) -> Path:
         """Persist a redacted launch packet beside its new session note."""
@@ -321,6 +445,8 @@ class SessionStore:
             created_at=metadata.created_at,
             updated_at=(now or _utc_now()).astimezone(UTC),
             pinned=metadata.pinned,
+            source_name=metadata.source_name,
+            source_format=metadata.source_format,
         )
         self._write_json(session_dir / "meta.json", updated.to_dict())
         self._atomic_write(note_path, self._render_note(updated, sections))
@@ -353,6 +479,8 @@ class SessionStore:
             created_at=metadata.created_at,
             updated_at=(now or _utc_now()).astimezone(UTC),
             pinned=pinned,
+            source_name=metadata.source_name,
+            source_format=metadata.source_format,
         )
         self._write_json(session_dir / "meta.json", updated.to_dict())
         self._atomic_write(session_dir / "note.md", self._render_note(updated, sections))
@@ -362,7 +490,7 @@ class SessionStore:
     def delete_session(self, session_id: str) -> None:
         """Delete one known session without recursively following filesystem state."""
         metadata, session_dir = self._find_session(session_id)
-        allowed_files = {"meta.json", "note.md", "context.md"}
+        allowed_files = {"meta.json", "note.md", "context.md", "import.md"}
         children = list(session_dir.iterdir())
         for child in children:
             self._reject_symlink(child)
@@ -414,6 +542,50 @@ class SessionStore:
     def _validate_session_id(session_id: str) -> None:
         if not VALID_SESSION_ID.fullmatch(session_id):
             raise InvalidSessionError(f"Invalid session ID: {session_id}")
+
+    @staticmethod
+    def _source_basename(source_name: str) -> str:
+        if not isinstance(source_name, str):
+            raise InvalidSessionError("source_name must be text")
+        cleaned = _require_text("source_name", source_name)
+        if any(ord(character) < 32 for character in cleaned):
+            raise InvalidSessionError("source_name contains unsafe characters")
+        try:
+            basename = re.split(r"[/\\]", cleaned)[-1]
+        except (TypeError, ValueError) as exc:
+            raise InvalidSessionError("source_name is invalid") from exc
+        if basename in {"", ".", ".."}:
+            raise InvalidSessionError("source_name must include a file name")
+        return basename
+
+    def _cleanup_import_session(self, session_dir: Path) -> None:
+        """Remove only known files from a newly-created failed import."""
+        if not session_dir.exists() and not session_dir.is_symlink():
+            return
+        self._reject_symlink(session_dir)
+        for child in list(session_dir.iterdir()):
+            self._reject_symlink(child)
+            if (
+                child.name not in {"import.md", "meta.json", "note.md"}
+                or not child.is_file()
+            ):
+                raise InvalidDataPathError(
+                    f"Refusing to clean import with an unknown entry: {child}"
+                )
+        for child in list(session_dir.iterdir()):
+            child.unlink()
+        session_dir.rmdir()
+
+    @staticmethod
+    def _import_title(title: str) -> str:
+        if not isinstance(title, str):
+            raise InvalidSessionError("title must be text")
+        cleaned = _require_text("title", title)
+        if len(cleaned) > MAX_IMPORTED_TITLE_CHARS:
+            raise InvalidSessionError("title must not exceed 200 characters")
+        if any(not character.isprintable() for character in cleaned):
+            raise InvalidSessionError("title must be one printable line")
+        return cleaned
 
     def _upsert_project(self, metadata: SessionMetadata) -> None:
         value = self._read_json(self.projects_path)

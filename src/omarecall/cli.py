@@ -10,6 +10,7 @@ from typing import Any, Sequence
 
 from omarecall.context_builder import ContextBuilder
 from omarecall.errors import InvalidSessionError, OmaRecallError
+from omarecall.importer import ConversationImporter
 from omarecall.launcher import AgentLauncher, LaunchRequest
 from omarecall.store import SessionMetadata, SessionStore
 
@@ -45,6 +46,7 @@ def _parser() -> argparse.ArgumentParser:
     show = session_commands.add_parser("show")
     show.add_argument("session_id")
     show.add_argument("--max-note-chars", type=int)
+    show.add_argument("--max-import-chars", type=int)
 
     checkpoint = commands.add_parser("checkpoint", help="Merge a session checkpoint")
     checkpoint.add_argument("session_id")
@@ -68,6 +70,13 @@ def _parser() -> argparse.ArgumentParser:
     delete.add_argument("session_id")
     delete.add_argument("--confirm", required=True)
 
+    import_conversation = commands.add_parser(
+        "import", help="Import one external AI conversation"
+    )
+    import_conversation.add_argument("--file", type=Path, required=True)
+    import_conversation.add_argument("--project", type=Path, default=Path.cwd())
+    import_conversation.add_argument("--title")
+
     context = commands.add_parser("context", help="Build a previewable memory packet")
     context_commands = context.add_subparsers(dest="context_command", required=True)
     build = context_commands.add_parser("build")
@@ -90,6 +99,25 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def _dispatch(args: argparse.Namespace, store: SessionStore) -> dict[str, Any]:
+    if args.command == "import":
+        imported = ConversationImporter().load(args.file)
+        metadata = store.create_imported_session(
+            project_path=args.project,
+            title=args.title or imported.title,
+            transcript=imported.transcript,
+            source_name=imported.source_name,
+            source_format=imported.source_format,
+        )
+        return {
+            "ok": True,
+            "session": _metadata_payload(metadata),
+            "import": {
+                "source_name": imported.source_name,
+                "format": imported.source_format,
+                "message_count": imported.message_count,
+                "warnings": list(imported.warnings),
+            },
+        }
     if args.command == "launch":
         request = LaunchRequest(
             project_path=args.project,
@@ -165,6 +193,19 @@ def _dispatch(args: argparse.Namespace, store: SessionStore) -> dict[str, Any]:
             note = str(session["note"])
             if len(note) > args.max_note_chars:
                 session["note"] = note[: args.max_note_chars] + "\n\n[NOTE TRUNCATED]"
+        if args.max_import_chars is not None and args.max_import_chars < 1:
+            raise InvalidSessionError("max-import-chars must be positive")
+        imported_conversation = store.get_imported_conversation(args.session_id)
+        if imported_conversation is not None:
+            if (
+                args.max_import_chars is not None
+                and len(imported_conversation) > args.max_import_chars
+            ):
+                imported_conversation = (
+                    imported_conversation[: args.max_import_chars]
+                    + "\n\n[IMPORT TRUNCATED]"
+                )
+            session["imported_conversation"] = imported_conversation
         return {"ok": True, "session": session}
     raise AssertionError(f"Unhandled command: {args.command}")
 

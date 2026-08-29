@@ -115,17 +115,47 @@ Item {
     root.busy = true
     root.errorText = ""
     showProcess.command = [root.cli, "session", "show", String(session.id),
-                           "--max-note-chars", "200000"]
+                           "--max-note-chars", "200000",
+                           "--max-import-chars", "200000"]
     showProcess.running = false
     showProcess.running = true
   }
 
   function browseProjectDirectory() {
-    if (directoryPicker.running || directoryPickerLaunchTimer.running) return
+    if (root.busy || directoryPicker.running || directoryPickerLaunchTimer.running
+        || importPicker.running || conversationPickerLaunchTimer.running) return
+    if (!root.releasePanelForPicker()) return
+    directoryPickerLaunchTimer.restart()
+  }
+
+  function importConversation() {
+    if (root.busy || directoryPicker.running || directoryPickerLaunchTimer.running
+        || importPicker.running || conversationPickerLaunchTimer.running) return
+    root.errorText = ""
+    root.noticeText = ""
+    if (projectInput.text.trim() === "") {
+      root.errorText = "Enter a project directory before importing a conversation."
+      projectInput.forceActiveFocus()
+      return
+    }
+    if (!root.releasePanelForPicker()) return
+    conversationPickerLaunchTimer.restart()
+  }
+
+  function releasePanelForPicker() {
+    if (root.reopenAfterPicker) return false
     root.errorText = ""
     root.reopenAfterPicker = true
     root.opened = false
-    directoryPickerLaunchTimer.restart()
+    return true
+  }
+
+  function restorePanelAfterPicker() {
+    var shouldReopen = root.reopenAfterPicker
+    root.reopenAfterPicker = false
+    if (!shouldReopen) return
+    root.opened = true
+    Qt.callLater(function() { keyCatcher.forceActiveFocus() })
   }
 
   function beginPreview(mode) {
@@ -259,12 +289,7 @@ Item {
     stdout: StdioCollector { id: directoryOut; waitForEnd: true }
     stderr: StdioCollector { id: directoryErr; waitForEnd: true }
     onExited: function(code) {
-      var shouldReopen = root.reopenAfterPicker
-      root.reopenAfterPicker = false
-      if (shouldReopen) {
-        root.opened = true
-        Qt.callLater(function() { keyCatcher.forceActiveFocus() })
-      }
+      root.restorePanelAfterPicker()
       if (code === 1) return
       if (code !== 0) {
         root.errorText = root.commandError(directoryErr.text,
@@ -286,6 +311,70 @@ Item {
       directoryPicker.command = ["omarchy-file-select", "--title",
                                  "Choose an OmaRecall project", "--directory"]
       directoryPicker.running = true
+    }
+  }
+
+  Process {
+    id: importPicker
+    command: []
+    stdout: StdioCollector { id: importPickerOut; waitForEnd: true }
+    stderr: StdioCollector { id: importPickerErr; waitForEnd: true }
+    onExited: function(code) {
+      root.restorePanelAfterPicker()
+      if (code === 1) return
+      if (code !== 0) {
+        root.errorText = root.commandError(importPickerErr.text,
+                                           "Could not open the conversation file picker.")
+        return
+      }
+      var selectedPath = String(importPickerOut.text || "").trim()
+      if (selectedPath === "") return
+      root.busy = true
+      root.errorText = ""
+      root.noticeText = ""
+      importProcess.command = [root.cli, "import", "--file", selectedPath, "--project",
+                               projectInput.text.trim()]
+      importProcess.running = false
+      importProcess.running = true
+    }
+  }
+
+  Timer {
+    id: conversationPickerLaunchTimer
+    interval: 100
+    repeat: false
+    onTriggered: {
+      importPicker.command = ["omarchy-file-select", "--title",
+                              "Import an AI conversation", "--extensions", "md txt json"]
+      importPicker.running = true
+    }
+  }
+
+  Process {
+    id: importProcess
+    stdout: StdioCollector { id: importOut; waitForEnd: true }
+    stderr: StdioCollector { id: importErr; waitForEnd: true }
+    onExited: function(code) {
+      root.busy = false
+      if (code !== 0) {
+        root.errorText = root.commandError(importErr.text, "Could not import the conversation.")
+        return
+      }
+      try {
+        var payload = JSON.parse(importOut.text)
+        var summary = payload.import || ({})
+        var count = Number(summary.message_count || 0)
+        var warnings = Array.isArray(summary.warnings) ? summary.warnings : []
+        root.noticeText = count > 0
+          ? "Imported " + count + " messages"
+            + (warnings.length > 0 ? " · " + warnings.length + " skipped" : "")
+            + ". Select This session to preview."
+          : "Conversation imported. Select This session to preview it."
+      } catch (error) {
+        root.noticeText = "Conversation imported. Select This session to preview it."
+      }
+      root.selectedIndex = 0
+      root.refreshSessions()
     }
   }
 
@@ -655,7 +744,12 @@ Item {
                 readOnly: true
                 selectByMouse: true
                 wrapMode: TextEdit.Wrap
-                text: root.detail ? String(root.detail.note || "")
+                text: root.detail
+                  ? String(root.detail.note || "")
+                    + (root.detail.imported_conversation
+                       ? "\n--- Imported conversation ---\n\n"
+                         + String(root.detail.imported_conversation)
+                       : "")
                   : "Select a session to inspect its goal, decisions, pending work, files, and warnings."
                 textFormat: TextEdit.PlainText
                 color: root.foreground
@@ -683,7 +777,8 @@ Item {
 
               Ui.TextField {
                 id: projectInput
-                width: parent.width - browseButton.width - parent.spacing
+                width: parent.width - browseButton.width - importButton.width
+                  - parent.spacing * 2
                 text: root.defaultProjectDirectory
                 placeholderText: "/path/to/project"
                 foreground: root.foreground
@@ -695,7 +790,8 @@ Item {
                 id: browseButton
                 width: Style.space(92)
                 text: directoryPicker.running ? "Opening…" : "Browse…"
-                enabled: !directoryPicker.running
+                enabled: !root.busy && !directoryPicker.running
+                  && !directoryPickerLaunchTimer.running
                 focusable: true
                 bordered: true
                 foreground: root.foreground
@@ -703,6 +799,21 @@ Item {
                 Accessible.name: "Browse project directory"
                 Accessible.description: "Choose the project folder using the system file picker"
                 onClicked: root.browseProjectDirectory()
+              }
+
+              Ui.Button {
+                id: importButton
+                width: Style.space(172)
+                text: importPicker.running ? "Opening…" : "Import conversation…"
+                enabled: !root.busy && !importPicker.running
+                  && !conversationPickerLaunchTimer.running
+                focusable: true
+                bordered: true
+                foreground: root.foreground
+                Accessible.role: Accessible.Button
+                Accessible.name: "Import an external AI conversation"
+                Accessible.description: "Choose a Markdown, text, or JSON conversation file"
+                onClicked: root.importConversation()
               }
             }
 

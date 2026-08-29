@@ -70,6 +70,130 @@ class SessionStoreTests(TestCase):
         projects = json.loads((self.data_dir / "projects.json").read_text())
         self.assertIn(session.project_id, projects["projects"])
 
+    def test_create_imported_session_stores_private_transcript_and_safe_provenance(self) -> None:
+        transcript = "User: Please continue the migration.\nAssistant: I updated the tests.\n"
+
+        session = self.store.create_imported_session(
+            project_path=self.project_dir,
+            title="Migration discussion",
+            transcript=transcript,
+            source_name="/home/alice/Downloads/export.md",
+            source_format="markdown",
+            now=self.now,
+            session_id="import-one",
+        )
+
+        self.assertEqual("external", session.agent)
+        self.assertEqual("completed", session.status)
+        self.assertEqual("export.md", session.source_name)
+        self.assertEqual("markdown", session.source_format)
+        self.assertEqual(transcript, self.store.get_imported_conversation(session.id))
+        session_dir = (
+            self.data_dir / "projects" / session.project_id / "sessions" / session.id
+        )
+        self.assertEqual(0o600, (session_dir / "import.md").stat().st_mode & 0o777)
+        self.assertNotIn("/home/alice", (session_dir / "meta.json").read_text())
+        self.assertIn("Imported conversation", (session_dir / "note.md").read_text())
+
+    def test_imported_transcript_validation_is_bounded_and_metadata_is_safe(self) -> None:
+        common = {
+            "project_path": self.project_dir,
+            "title": "Imported chat",
+            "source_name": "chat.md",
+            "source_format": "markdown",
+            "now": self.now,
+        }
+        with self.assertRaisesRegex(InvalidSessionError, "transcript must not be empty"):
+            self.store.create_imported_session(transcript=" \n", **common)
+        with self.assertRaisesRegex(InvalidSessionError, "2 MiB"):
+            self.store.create_imported_session(transcript="x" * (2 * 1024 * 1024 + 1), **common)
+        with self.assertRaisesRegex(InvalidSessionError, "source_name"):
+            self.store.create_imported_session(
+                transcript="hello",
+                source_name="bad\nname.md",
+                **{key: value for key, value in common.items() if key != "source_name"},
+            )
+        with self.assertRaisesRegex(InvalidSessionError, "source_format"):
+            self.store.create_imported_session(
+                transcript="hello",
+                source_format="md\nunsafe",
+                **{key: value for key, value in common.items() if key != "source_format"},
+            )
+        for unsafe_title in ("Title\n## Warnings", "x" * 201, "Title\u202e"):
+            with self.subTest(title=unsafe_title), self.assertRaisesRegex(
+                InvalidSessionError, "title"
+            ):
+                self.store.create_imported_session(
+                    transcript="hello", title=unsafe_title,
+                    **{key: value for key, value in common.items() if key != "title"},
+                )
+
+    def test_imported_conversation_can_be_bounded_and_delete_allows_import_file(self) -> None:
+        session = self.store.create_imported_session(
+            project_path=self.project_dir,
+            title="Imported chat",
+            transcript="abcdefghij",
+            source_name="chat.txt",
+            source_format="text",
+            now=self.now,
+            session_id="import-two",
+        )
+
+        self.assertEqual(
+            "abcd", self.store.get_imported_conversation(session.id, max_chars=4)
+        )
+        self.store.delete_session(session.id)
+
+        self.assertEqual([], self.store.list_sessions())
+
+    def test_regular_session_has_no_imported_conversation(self) -> None:
+        session = self.create_session()
+
+        self.assertIsNone(self.store.get_imported_conversation(session.id))
+
+    def test_failed_import_does_not_leave_a_partial_session(self) -> None:
+        self.store.initialize()
+        real_write = self.store._atomic_write
+
+        def fail_note(path: Path, content: str) -> None:
+            if path.name == "note.md":
+                raise OSError("simulated write failure")
+            real_write(path, content)
+
+        with patch.object(self.store, "_atomic_write", side_effect=fail_note):
+            with self.assertRaisesRegex(OSError, "simulated"):
+                self.store.create_imported_session(
+                    project_path=self.project_dir,
+                    title="Imported chat",
+                    transcript="conversation",
+                    source_name="chat.txt",
+                    source_format="text",
+                    now=self.now,
+                    session_id="failed-import",
+                )
+
+        self.assertEqual([], self.store.list_sessions())
+        leftovers = list((self.data_dir / "projects").rglob("*failed-import*"))
+        self.assertEqual([], leftovers)
+
+    def test_missing_imported_transcript_is_reported_as_corrupt(self) -> None:
+        session = self.store.create_imported_session(
+            project_path=self.project_dir,
+            title="Imported chat",
+            transcript="conversation",
+            source_name="chat.txt",
+            source_format="text",
+            now=self.now,
+            session_id="missing-import",
+        )
+        session_dir = (
+            self.data_dir / "projects" / session.project_id / "sessions" / session.id
+        )
+        (session_dir / "import.md").unlink()
+
+        with self.assertRaisesRegex(StoreCorruptError, "Imported conversation is missing"):
+            self.store.get_imported_conversation(session.id)
+
     def test_project_ids_do_not_collide_for_equal_directory_names(self) -> None:
         other = Path(self.temp_dir) / "nested" / "My Project"
         other.mkdir(parents=True)

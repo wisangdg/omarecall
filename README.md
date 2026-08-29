@@ -8,6 +8,8 @@ memory will be recalled, and starts a new interactive agent with that context.
 
 - Scrollable session history in an Omarchy-native bar panel.
 - Start with relevant project context, one selected session, or no memory.
+- Import one external `.md`, `.txt`, or supported `.json` conversation as a
+  completed session attached to a chosen project.
 - Exact context preview with a fingerprint that prevents launch if the source
   changes after review.
 - Interactive adapters for Codex, Claude, and OpenCode, plus an
@@ -53,6 +55,19 @@ The recalled packet is stored as a private file beside the new session. Only a
 short instruction and that file path appear in the agent process arguments;
 the recalled memory itself is not placed in the process list.
 
+## Importing an external conversation
+
+Choose the project that the conversation belongs to, then select **Import
+conversation…**. Each file becomes one completed session and can immediately
+be previewed with **This session** or included through **Relevant project**.
+
+Markdown and plain text are the dependable interchange formats. JSON import is
+best-effort for one generic `messages` conversation, a ChatGPT `mapping`
+conversation, or Claude `chat_messages`. A full export containing multiple
+conversations is rejected instead of silently mixing unrelated chats into one
+project. Files must be UTF-8 regular files, cannot be symlinks, and are limited
+to 2 MiB.
+
 ## Storage
 
 Session data defaults to:
@@ -64,6 +79,7 @@ ${XDG_DATA_HOME:-~/.local/share}/omarecall/
 └── projects/<project-id>/sessions/<session-id>/
     ├── meta.json
     ├── note.md
+    ├── import.md   # only for explicitly imported conversations
     └── context.md  # only for launches with recalled memory
 ```
 
@@ -71,9 +87,8 @@ Directories use mode `0700` and files use `0600`. `index.json` is a cache and
 can be recreated with `omarecall reindex`. Uninstalling the plugin never removes
 session data automatically.
 
-Raw agent transcripts are not imported or stored. In this MVP, reliable
-automatic capture applies to sessions started through OmaRecall; sessions
-started elsewhere remain outside its history.
+Raw transcripts are stored only when the user explicitly imports them. OmaRecall
+does not automatically capture sessions started elsewhere.
 
 ## CLI
 
@@ -81,6 +96,7 @@ started elsewhere remain outside its history.
 ./bin/omarecall session list --limit 100
 ./bin/omarecall session show SESSION_ID
 ./bin/omarecall checkpoint SESSION_ID --completed "Implemented storage"
+./bin/omarecall import --file conversation.md --project "$PWD"
 ./bin/omarecall context build --mode session --session-id SESSION_ID
 ./bin/omarecall launch --agent codex --project "$PWD" \
   --goal "Continue the work" --mode session --session-id SESSION_ID
