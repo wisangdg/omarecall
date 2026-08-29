@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "id": "wdg.omarecall",
+  "name": "OmaRecall",
+  "version": "0.1.0",
+  "author": "wdg",
+  "license": "MIT",
+  "description": "Local, inspectable memory for AI agent sessions.",
+  "kinds": [
+    "panel",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "panel": "Panel.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "OmaRecall",
+    "description": "Review session notes and start AI agents with selected context.",
+    "category": "AI",
+    "defaultSection": "right",
+    "allowMultiple": false
+  }
+}
