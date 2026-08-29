@@ -45,6 +45,10 @@ omarchy-shell shell toggle wdg.omarecall
 4. Start the agent. OmaRecall creates a new session and gives the agent a
    checkpoint command.
 
+The project field starts at the current user's home directory. Set
+`OMARECALL_DEFAULT_PROJECT` before starting Omarchy Shell to use a different
+portable default; a selected session's project path takes precedence.
+
 The recalled packet is stored as a private file beside the new session. Only a
 short instruction and that file path appear in the agent process arguments;
 the recalled memory itself is not placed in the process list.

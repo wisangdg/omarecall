@@ -45,3 +45,4 @@ class PluginContractTests(TestCase):
         self.assertIn("directoryPickerLaunchTimer.restart()", panel)
         self.assertIn('Quickshell.env("OMARECALL_DEFAULT_PROJECT")', panel)
         self.assertIn('text: root.defaultProjectDirectory', panel)
+        self.assertNotIn('"/development/projects"', panel)

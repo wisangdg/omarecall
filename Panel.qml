@@ -18,7 +18,7 @@ Item {
   readonly property string defaultProjectDirectory: {
     var configured = String(Quickshell.env("OMARECALL_DEFAULT_PROJECT") || "").trim()
     if (configured !== "") return configured
-    return String(Quickshell.env("HOME") || "") + "/development/projects"
+    return String(Quickshell.env("HOME") || "")
   }
 
   property var shell: null
