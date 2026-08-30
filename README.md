@@ -74,6 +74,7 @@ Session data defaults to:
 
 ```text
 ${XDG_DATA_HOME:-~/.local/share}/omarecall/
+├── .store.lock
 ├── projects.json
 ├── index.json
 └── projects/<project-id>/sessions/<session-id>/
@@ -85,7 +86,9 @@ ${XDG_DATA_HOME:-~/.local/share}/omarecall/
 
 Directories use mode `0700` and files use `0600`. `index.json` is a cache and
 can be recreated with `omarecall reindex`. Uninstalling the plugin never removes
-session data automatically.
+session data automatically. The persistent `.store.lock` serializes complete
+store operations across CLI processes; it must not be replaced or removed while
+OmaRecall is running.
 
 Raw transcripts are stored only when the user explicitly imports them. OmaRecall
 does not automatically capture sessions started elsewhere.

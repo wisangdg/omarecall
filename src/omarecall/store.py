@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
 import re
 import secrets
 import stat
+import threading
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+from functools import wraps
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable, Iterator, ParamSpec, TypeVar
 
 from omarecall.errors import (
     InvalidDataPathError,
@@ -29,6 +33,69 @@ MAX_STORE_FILE_BYTES = 4 * 1024 * 1024
 MAX_IMPORTED_TRANSCRIPT_BYTES = 2 * 1024 * 1024
 MAX_IMPORTED_TITLE_CHARS = 200
 VALID_SOURCE_FORMAT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9.+_-]{0,31}$")
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
+_ACTIVE_LOCK_DESCRIPTORS: set[int] = set()
+_DESCRIPTOR_REGISTRY_LOCK = threading.Lock()
+
+
+def _prepare_store_lock_fork() -> None:
+    """Freeze the descriptor registry while the process is being forked."""
+    _DESCRIPTOR_REGISTRY_LOCK.acquire()
+
+
+def _finish_store_lock_fork_in_parent() -> None:
+    _DESCRIPTOR_REGISTRY_LOCK.release()
+
+
+def _finish_store_lock_fork_in_child() -> None:
+    """Drop file descriptions whose flock ownership came from the parent."""
+    try:
+        for descriptor in _ACTIVE_LOCK_DESCRIPTORS:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        _ACTIVE_LOCK_DESCRIPTORS.clear()
+    finally:
+        _DESCRIPTOR_REGISTRY_LOCK.release()
+
+
+def _open_registered_lock_descriptor(path: Path, flags: int) -> int:
+    """Open and register a lock descriptor atomically with respect to fork."""
+    with _DESCRIPTOR_REGISTRY_LOCK:
+        descriptor = os.open(path, flags, 0o600)
+        _ACTIVE_LOCK_DESCRIPTORS.add(descriptor)
+        return descriptor
+
+
+def _close_registered_lock_descriptor(descriptor: int) -> None:
+    """Unregister and close a lock descriptor atomically with respect to fork."""
+    with _DESCRIPTOR_REGISTRY_LOCK:
+        _ACTIVE_LOCK_DESCRIPTORS.discard(descriptor)
+        os.close(descriptor)
+
+
+os.register_at_fork(
+    before=_prepare_store_lock_fork,
+    after_in_parent=_finish_store_lock_fork_in_parent,
+    after_in_child=_finish_store_lock_fork_in_child,
+)
+
+
+def _store_locked(
+    method: Callable[_P, _R],
+) -> Callable[_P, _R]:
+    """Serialize a complete public store operation across threads and processes."""
+
+    @wraps(method)
+    def locked(*args: _P.args, **kwargs: _P.kwargs) -> _R:
+        store = args[0]
+        with store._store_lock():
+            return method(*args, **kwargs)
+
+    return locked
 
 
 def _utc_now() -> datetime:
@@ -150,6 +217,9 @@ class SessionStore:
 
     def __init__(self, root: Path | str) -> None:
         self.root = Path(root).expanduser()
+        self._thread_lock = threading.RLock()
+        self._lock_state = threading.local()
+        self._lock_pid = os.getpid()
 
     @classmethod
     def default(cls) -> SessionStore:
@@ -166,6 +236,7 @@ class SessionStore:
     def index_path(self) -> Path:
         return self.root / "index.json"
 
+    @_store_locked
     def initialize(self) -> None:
         self._secure_mkdir(self.root)
         self._secure_mkdir(self.root / "projects")
@@ -181,6 +252,7 @@ class SessionStore:
         else:
             self._reject_symlink(self.index_path)
 
+    @_store_locked
     def create_session(
         self,
         *,
@@ -228,6 +300,7 @@ class SessionStore:
         self._upsert_index(metadata)
         return metadata
 
+    @_store_locked
     def create_imported_session(
         self,
         *,
@@ -315,6 +388,7 @@ class SessionStore:
         digest = hashlib.sha256(str(resolved).encode()).hexdigest()[:10]
         return f"{name}-{digest}", name, resolved
 
+    @_store_locked
     def get_session(self, session_id: str) -> dict[str, Any]:
         metadata, session_dir = self._find_session(session_id)
         note_path = session_dir / "note.md"
@@ -325,11 +399,13 @@ class SessionStore:
             raise StoreCorruptError(f"Session note is missing: {session_id}") from exc
         return {**metadata.to_dict(), "note": note}
 
+    @_store_locked
     def get_session_metadata(self, session_id: str) -> SessionMetadata:
         """Return validated session metadata without loading its note."""
         metadata, _ = self._find_session(session_id)
         return metadata
 
+    @_store_locked
     def get_session_sections(
         self, session_id: str
     ) -> tuple[SessionMetadata, dict[str, list[str]]]:
@@ -343,6 +419,7 @@ class SessionStore:
             raise StoreCorruptError(f"Session note is missing: {session_id}") from exc
         return metadata, self._parse_note(note)
 
+    @_store_locked
     def get_imported_conversation(
         self, session_id: str, *, max_chars: int | None = None
     ) -> str | None:
@@ -365,6 +442,7 @@ class SessionStore:
             return transcript
         return transcript[:max_chars]
 
+    @_store_locked
     def save_context_packet(self, session_id: str, packet: str) -> Path:
         """Persist a redacted launch packet beside its new session note."""
         if not packet:
@@ -374,6 +452,7 @@ class SessionStore:
         self._atomic_write(context_path, packet)
         return context_path
 
+    @_store_locked
     def list_sessions(
         self,
         *,
@@ -397,6 +476,7 @@ class SessionStore:
             sessions = sessions[:limit]
         return sessions
 
+    @_store_locked
     def add_checkpoint(
         self,
         session_id: str,
@@ -453,11 +533,13 @@ class SessionStore:
         self._upsert_index(updated)
         return updated
 
+    @_store_locked
     def archive_session(
         self, session_id: str, *, now: datetime | None = None
     ) -> SessionMetadata:
         return self.add_checkpoint(session_id, status="archived", now=now)
 
+    @_store_locked
     def set_pinned(
         self,
         session_id: str,
@@ -487,6 +569,7 @@ class SessionStore:
         self._upsert_index(updated)
         return updated
 
+    @_store_locked
     def delete_session(self, session_id: str) -> None:
         """Delete one known session without recursively following filesystem state."""
         metadata, session_dir = self._find_session(session_id)
@@ -504,6 +587,7 @@ class SessionStore:
         sessions = [item for item in self.list_sessions() if item.id != metadata.id]
         self._write_index(sessions)
 
+    @_store_locked
     def reindex(self) -> int:
         self._secure_mkdir(self.root)
         projects_root = self.root / "projects"
@@ -738,6 +822,66 @@ class SessionStore:
                 pass
             raise
 
+    @contextmanager
+    def _store_lock(self) -> Iterator[None]:
+        """Hold the persistent store-wide advisory lock for one transaction."""
+        current_pid = os.getpid()
+        if current_pid != self._lock_pid:
+            # A lock inherited from a multi-threaded parent can remain permanently
+            # owned by a thread that does not exist in the forked child.
+            self._thread_lock = threading.RLock()
+            self._lock_state = threading.local()
+            self._lock_pid = current_pid
+        with self._thread_lock:
+            depth = getattr(self._lock_state, "depth", 0)
+            if depth:
+                self._lock_state.depth = depth + 1
+                try:
+                    yield
+                finally:
+                    self._lock_state.depth -= 1
+                return
+
+            self._secure_mkdir(self.root)
+            lock_path = self.root / ".store.lock"
+            self._reject_symlink(lock_path, allow_missing=True)
+            flags = os.O_RDWR | os.O_CREAT
+            if hasattr(os, "O_CLOEXEC"):
+                flags |= os.O_CLOEXEC
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            try:
+                descriptor = _open_registered_lock_descriptor(lock_path, flags)
+            except OSError as exc:
+                raise InvalidDataPathError(
+                    f"Cannot safely open store lock: {lock_path}"
+                ) from exc
+            try:
+                details = os.fstat(descriptor)
+                if not stat.S_ISREG(details.st_mode) or details.st_nlink != 1:
+                    raise InvalidDataPathError(
+                        f"Store lock is not a private regular file: {lock_path}"
+                    )
+                os.fchmod(descriptor, 0o600)
+                fcntl.flock(descriptor, fcntl.LOCK_EX)
+                current = os.stat(lock_path, follow_symlinks=False)
+                if (
+                    not stat.S_ISREG(current.st_mode)
+                    or current.st_dev != details.st_dev
+                    or current.st_ino != details.st_ino
+                ):
+                    raise InvalidDataPathError(
+                        f"Store lock changed while it was being opened: {lock_path}"
+                    )
+                self._lock_state.depth = 1
+                try:
+                    yield
+                finally:
+                    self._lock_state.depth = 0
+                    fcntl.flock(descriptor, fcntl.LOCK_UN)
+            finally:
+                _close_registered_lock_descriptor(descriptor)
+
     def _secure_mkdir(self, path: Path) -> None:
         if path == self.root:
             if path.exists() or path.is_symlink():
@@ -747,7 +891,16 @@ class SessionStore:
                         f"Storage path is not a directory: {path}"
                     )
             else:
-                path.mkdir(parents=True, mode=0o700)
+                try:
+                    path.mkdir(parents=True, mode=0o700)
+                except FileExistsError:
+                    # Another process may have bootstrapped the store concurrently.
+                    pass
+                self._reject_symlink(path)
+                if not path.is_dir():
+                    raise InvalidDataPathError(
+                        f"Storage path is not a directory: {path}"
+                    )
             path.chmod(0o700)
             return
 
@@ -769,7 +922,11 @@ class SessionStore:
                         f"Storage path is not a directory: {current}"
                     )
             else:
-                current.mkdir(mode=0o700)
+                try:
+                    current.mkdir(mode=0o700)
+                except FileExistsError:
+                    # A concurrent holder can create the same safe component.
+                    pass
             self._reject_symlink(current)
             current.chmod(0o700)
 

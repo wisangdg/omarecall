@@ -16,6 +16,8 @@ automatic redaction, so the local data directory should not be shared publicly.
   redacted before recalled context is created.
 - Storage directories and files are private to the user.
 - Writes use a same-directory temporary file, `fsync`, and atomic replacement.
+- A private persistent lock serializes complete store transactions across
+  concurrent OmaRecall processes and prevents read-modify-write lost updates.
 - Symlink storage targets, nested symlink paths, and traversal-shaped session
   IDs are rejected.
 - Session deletion only removes known regular files and refuses unknown entries.
