@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Expand the launcher catalog to Claude, Codex, Copilot, Crush, Grok, Oh My
+  Pi, OpenCode, Pi, and Antigravity using their Omarchy interactive flags.
+- Add an accessible compact agent selector with an **Omarchy default** option.
+- Show an adjacent warning before launch that agents use unattended approval
+  modes and recalled memory remains untrusted.
+- Delegate an unknown future default through `omarchy-agent --inline --prompt`
+  while continuing to reject unknown explicit agent names.
+
 ## 0.2.0 — 2026-08-29
 
 - Import external Markdown, text, generic JSON, ChatGPT, and Claude

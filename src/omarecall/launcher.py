@@ -71,7 +71,20 @@ class LaunchPlan:
 class AgentLauncher:
     """Prepare context files and open supported interactive agents in Omarchy."""
 
-    supported_agents = {"codex", "claude", "opencode"}
+    supported_agents = frozenset(
+        {
+            "agy",
+            "claude",
+            "codex",
+            "copilot",
+            "crush",
+            "grok",
+            "omp",
+            "opencode",
+            "pi",
+        }
+    )
+    deprecated_agents = frozenset({"gemini"})
 
     def __init__(
         self,
@@ -92,6 +105,8 @@ class AgentLauncher:
 
     def prepare(self, request: LaunchRequest) -> LaunchPlan:
         agent = request.agent or self.default_agent_resolver()
+        if agent in self.deprecated_agents:
+            raise UnsupportedAgentError(f"Unsupported agent: {agent}")
         uses_fallback = agent not in self.supported_agents
         if uses_fallback and request.agent is not None:
             raise UnsupportedAgentError(f"Unsupported agent: {agent}")
@@ -197,7 +212,7 @@ class AgentLauncher:
         uses_fallback: bool = False,
     ) -> list[str]:
         if uses_fallback:
-            return [executable, "--prompt", bootstrap]
+            return [executable, "--inline", "--prompt", bootstrap]
         if agent == "codex":
             return [
                 executable,
@@ -219,6 +234,31 @@ class AgentLauncher:
                 "--",
                 bootstrap,
             ]
+        if agent == "copilot":
+            return [executable, "--allow-all", "--interactive", bootstrap]
+        if agent == "crush":
+            return [executable, "run", bootstrap]
+        if agent == "grok":
+            return [
+                executable,
+                "--permission-mode",
+                "bypassPermissions",
+                "--",
+                bootstrap,
+            ]
+        if agent == "omp":
+            return [executable, "--auto-approve", "--", bootstrap]
         if agent == "opencode":
-            return [executable, str(project_path), "--auto", "--prompt", bootstrap]
+            return [executable, "--auto", "--prompt", bootstrap]
+        if agent == "pi":
+            return [executable, bootstrap]
+        if agent == "agy":
+            return [
+                executable,
+                "--dangerously-skip-permissions",
+                "--add-dir",
+                str(data_path),
+                "-i",
+                bootstrap,
+            ]
         raise UnsupportedAgentError(f"Unsupported agent: {agent}")

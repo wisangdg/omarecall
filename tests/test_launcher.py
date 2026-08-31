@@ -77,16 +77,50 @@ class AgentLauncherTests(TestCase):
 
     def test_supported_adapters_build_interactive_commands(self) -> None:
         cases = {
-            "codex": ["/mock/bin/codex", "--approve-for-me", "-C"],
-            "claude": ["/mock/bin/claude", "--permission-mode", "auto"],
-            "opencode": ["/mock/bin/opencode", str(self.project.resolve()), "--auto"],
+            "claude": [
+                "/mock/bin/claude",
+                "--permission-mode",
+                "auto",
+                "--add-dir",
+                str(self.store.root),
+                "--",
+            ],
+            "codex": [
+                "/mock/bin/codex",
+                "--approve-for-me",
+                "-C",
+                str(self.project.resolve()),
+                "--add-dir",
+                str(self.store.root),
+                "--",
+            ],
+            "copilot": ["/mock/bin/copilot", "--allow-all", "--interactive"],
+            "crush": ["/mock/bin/crush", "run"],
+            "grok": [
+                "/mock/bin/grok",
+                "--permission-mode",
+                "bypassPermissions",
+                "--",
+            ],
+            "omp": ["/mock/bin/omp", "--auto-approve", "--"],
+            "opencode": ["/mock/bin/opencode", "--auto", "--prompt"],
+            "pi": ["/mock/bin/pi"],
+            "agy": [
+                "/mock/bin/agy",
+                "--dangerously-skip-permissions",
+                "--add-dir",
+                str(self.store.root),
+                "-i",
+            ],
         }
         for agent, prefix in cases.items():
             with self.subTest(agent=agent):
                 plan = self.launcher.prepare(
                     self.request(agent=agent, mode="clean", source_session_id=None)
                 )
-                self.assertEqual(tuple(prefix), plan.agent_argv[: len(prefix)])
+                self.assertEqual(tuple(prefix), plan.agent_argv[:-1])
+                self.assertIn("OmaRecall session:", plan.agent_argv[-1])
+                self.assertIn("checkpoint", plan.agent_argv[-1])
 
     def test_missing_agent_binary_is_rejected_before_session_creation(self) -> None:
         launcher = AgentLauncher(
@@ -104,6 +138,25 @@ class AgentLauncherTests(TestCase):
         with self.assertRaisesRegex(UnsupportedAgentError, "unknown-agent"):
             self.launcher.prepare(self.request(agent="unknown-agent"))
 
+    def test_deprecated_gemini_explicit_agent_is_rejected(self) -> None:
+        with self.assertRaisesRegex(UnsupportedAgentError, "gemini"):
+            self.launcher.prepare(self.request(agent="gemini"))
+
+    def test_deprecated_gemini_default_is_rejected_before_session_creation(self) -> None:
+        launcher = AgentLauncher(
+            self.store,
+            executable_resolver=self.executable,
+            default_agent_resolver=lambda: "gemini",
+        )
+        count_before = len(self.store.list_sessions())
+
+        with self.assertRaisesRegex(UnsupportedAgentError, "gemini"):
+            launcher.prepare(
+                self.request(agent=None, mode="clean", source_session_id=None)
+            )
+
+        self.assertEqual(count_before, len(self.store.list_sessions()))
+
     def test_unknown_default_agent_uses_omarchy_launcher_fallback(self) -> None:
         launcher = AgentLauncher(
             self.store,
@@ -117,7 +170,23 @@ class AgentLauncherTests(TestCase):
 
         self.assertEqual("future-agent", plan.agent)
         self.assertEqual("/mock/bin/omarchy-agent", plan.agent_argv[0])
-        self.assertEqual("--prompt", plan.agent_argv[1])
+        self.assertEqual("--inline", plan.agent_argv[1])
+        self.assertEqual("--prompt", plan.agent_argv[2])
+
+    def test_known_default_agent_uses_direct_adapter(self) -> None:
+        launcher = AgentLauncher(
+            self.store,
+            executable_resolver=self.executable,
+            default_agent_resolver=lambda: "copilot",
+        )
+
+        plan = launcher.prepare(
+            self.request(agent=None, mode="clean", source_session_id=None)
+        )
+
+        self.assertEqual("copilot", plan.agent)
+        self.assertEqual("/mock/bin/copilot", plan.agent_argv[0])
+        self.assertNotIn("omarchy-agent", plan.agent_argv[0])
 
     def test_changed_context_is_rejected_after_preview(self) -> None:
         preview = ContextBuilder(self.store).build(

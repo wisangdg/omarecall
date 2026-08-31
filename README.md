@@ -12,8 +12,9 @@ memory will be recalled, and starts a new interactive agent with that context.
   completed session attached to a chosen project.
 - Exact context preview with a fingerprint that prevents launch if the source
   changes after review.
-- Interactive adapters for Codex, Claude, and OpenCode, plus an
-  `omarchy-agent` fallback for future default agents.
+- Interactive adapters for Claude, Codex, Copilot, Crush, Grok, Oh My Pi,
+  OpenCode, Pi, and Antigravity, plus an `omarchy-agent` fallback for future
+  default agents.
 - Agent checkpoint contract for goals, completed work, decisions, pending work,
   relevant files, and warnings.
 - Pin, complete, archive, and explicitly confirmed delete actions.
@@ -42,7 +43,8 @@ omarchy-shell shell toggle wdg.omarecall
 ## How launch works
 
 1. Select a previous session, or enter a project path for a clean start.
-2. Enter the goal and choose Codex, Claude, or OpenCode.
+2. Enter the goal and choose **Omarchy default** or one of the nine explicit
+   agent adapters.
 3. Review relevant project memory, one session, or a clean-session notice.
 4. Start the agent. OmaRecall creates a new session and gives the agent a
    checkpoint command.
@@ -54,6 +56,12 @@ portable default; a selected session's project path takes precedence.
 The recalled packet is stored as a private file beside the new session. Only a
 short instruction and that file path appear in the agent process arguments;
 the recalled memory itself is not placed in the process list.
+
+**Omarchy default** follows the agent selected by `omarchy-default-agent`. A
+known agent uses OmaRecall's direct adapter; a future unknown default is passed
+to `omarchy-agent --inline --prompt`. Explicit unknown agent names are rejected.
+Agent CLIs are not bundled with the plugin and must be installed and configured
+separately. Locally deprecated agent identities are rejected before fallback.
 
 ## Importing an external conversation
 
@@ -103,6 +111,8 @@ does not automatically capture sessions started elsewhere.
 ./bin/omarecall context build --mode session --session-id SESSION_ID
 ./bin/omarecall launch --agent codex --project "$PWD" \
   --goal "Continue the work" --mode session --session-id SESSION_ID
+./bin/omarecall launch --project "$PWD" --goal "Use my Omarchy default" \
+  --mode clean
 ```
 
 Every successful command prints JSON to stdout. Expected errors print a stable

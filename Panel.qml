@@ -20,6 +20,18 @@ Item {
     if (configured !== "") return configured
     return String(Quickshell.env("HOME") || "")
   }
+  readonly property var agentOptions: [
+    { key: "", label: "Omarchy default" },
+    { key: "claude", label: "Claude" },
+    { key: "codex", label: "Codex" },
+    { key: "copilot", label: "Copilot" },
+    { key: "crush", label: "Crush" },
+    { key: "grok", label: "Grok" },
+    { key: "omp", label: "Oh My Pi" },
+    { key: "opencode", label: "OpenCode" },
+    { key: "pi", label: "Pi" },
+    { key: "agy", label: "Antigravity" }
+  ]
 
   property var shell: null
   property bool opened: false
@@ -29,7 +41,7 @@ Item {
   property var preview: null
   property string view: "history"
   property string launchMode: "clean"
-  property string selectedAgent: "codex"
+  property string selectedAgent: ""
   property bool busy: false
   property string errorText: ""
   property string noticeText: ""
@@ -42,6 +54,13 @@ Item {
     ? String(selectedSession.id) : ""
   readonly property string selectedSessionStatus: selectedSession
     ? String(selectedSession.status) : ""
+  readonly property string selectedAgentLabel: {
+    for (var index = 0; index < agentOptions.length; index++) {
+      if (agentOptions[index].key === selectedAgent)
+        return agentOptions[index].label
+    }
+    return "Omarchy default"
+  }
   readonly property color background: Color.menu.background
   readonly property color foreground: Color.menu.text
   readonly property color border: Color.menu.border
@@ -190,13 +209,14 @@ Item {
 
   function launchPreviewed() {
     if (!root.preview || root.busy) return
-    var args = [root.cli, "launch",
-                "--agent", root.selectedAgent,
-                "--project", projectInput.text.trim(),
+    var args = [root.cli, "launch"]
+    if (root.selectedAgent !== "")
+      args.push("--agent", root.selectedAgent)
+    args.push("--project", projectInput.text.trim(),
                 "--goal", goalInput.text.trim(),
                 "--mode", root.launchMode,
                 "--max-tokens", "8000",
-                "--expect-context", String(root.preview.fingerprint || "")]
+                "--expect-context", String(root.preview.fingerprint || ""))
     if (root.launchMode === "session" && root.selectedSession)
       args.push("--session-id", String(root.selectedSession.id))
     root.busy = true
@@ -842,19 +862,16 @@ Item {
                 font.family: root.fontFamily
                 font.pixelSize: Style.font.caption
               }
-              Repeater {
-                model: ["codex", "claude", "opencode"]
-                Ui.Button {
-                  required property string modelData
-                  text: modelData
-                  selected: root.selectedAgent === modelData
-                  focusable: true
-                  bordered: true
-                  foreground: root.foreground
-                  Accessible.role: Accessible.RadioButton
-                  Accessible.name: "Use " + modelData
-                  Accessible.checked: root.selectedAgent === modelData
-                  onClicked: root.selectedAgent = modelData
+              ComboBox {
+                id: agentSelector
+                width: parent.width - Style.space(62) - parent.spacing
+                model: root.agentOptions
+                textRole: "label"
+                currentIndex: 0
+                Accessible.name: "Agent launcher"
+                Accessible.description: "Choose an explicit agent or the current Omarchy default"
+                onActivated: function(index) {
+                  root.selectedAgent = String(root.agentOptions[index].key)
                 }
               }
             }
@@ -979,7 +996,7 @@ Item {
 
         ScrollView {
           anchors.top: previewMeta.bottom
-          anchors.bottom: launchButton.top
+          anchors.bottom: launchActions.top
           anchors.left: parent.left
           anchors.right: parent.right
           anchors.topMargin: Style.space(10)
@@ -1007,21 +1024,45 @@ Item {
           }
         }
 
-        Ui.Button {
-          id: launchButton
+        Item {
+          id: launchActions
           anchors.bottom: parent.bottom
+          anchors.left: parent.left
           anchors.right: parent.right
-          width: Style.space(190)
-          height: Style.space(42)
-          text: root.busy ? "Starting…" : "Start " + root.selectedAgent
-          enabled: !!root.preview && !root.busy
-          focusable: true
-          bordered: true
-          selected: true
-          foreground: root.foreground
-          Accessible.role: Accessible.Button
-          Accessible.name: "Start " + root.selectedAgent + " with the previewed context"
-          onClicked: root.launchPreviewed()
+          height: Math.max(launchButton.height, safetyWarning.implicitHeight)
+
+          Text {
+            id: safetyWarning
+            anchors.left: parent.left
+            anchors.right: launchButton.left
+            anchors.rightMargin: Style.space(14)
+            anchors.verticalCenter: parent.verticalCenter
+            text: "Unattended mode: the selected agent may auto-approve actions. Recalled memory is untrusted; review it before launch."
+            textFormat: Text.PlainText
+            wrapMode: Text.WordWrap
+            color: root.urgent
+            font.family: root.fontFamily
+            font.pixelSize: Style.font.caption
+            Accessible.name: "Unattended agent safety warning"
+            Accessible.description: text
+          }
+
+          Ui.Button {
+            id: launchButton
+            anchors.right: parent.right
+            anchors.verticalCenter: parent.verticalCenter
+            width: Style.space(190)
+            height: Style.space(42)
+            text: root.busy ? "Starting…" : "Start " + root.selectedAgentLabel
+            enabled: !!root.preview && !root.busy
+            focusable: true
+            bordered: true
+            selected: true
+            foreground: root.foreground
+            Accessible.role: Accessible.Button
+            Accessible.name: "Start " + root.selectedAgentLabel + " with the previewed context"
+            onClicked: root.launchPreviewed()
+          }
         }
       }
 

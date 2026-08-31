@@ -62,3 +62,33 @@ class PluginContractTests(TestCase):
         self.assertIn("root.detail.imported_conversation", panel)
         self.assertIn("importOut.text", panel)
         self.assertIn("summary.warnings", panel)
+
+    def test_panel_offers_effective_omarchy_agents_in_accessible_selector(self) -> None:
+        panel = (self.root / "Panel.qml").read_text()
+
+        for key, label in {
+            "": "Omarchy default",
+            "claude": "Claude",
+            "codex": "Codex",
+            "copilot": "Copilot",
+            "crush": "Crush",
+            "grok": "Grok",
+            "omp": "Oh My Pi",
+            "opencode": "OpenCode",
+            "pi": "Pi",
+            "agy": "Antigravity",
+        }.items():
+            self.assertIn(f'key: "{key}", label: "{label}"', panel)
+        self.assertIn("ComboBox", panel)
+        self.assertIn('Accessible.name: "Agent launcher"', panel)
+        self.assertIn('if (root.selectedAgent !== "")', panel)
+        self.assertNotIn('key: "gemini"', panel)
+        self.assertNotIn('model: ["codex", "claude", "opencode"]', panel)
+
+    def test_preview_warns_before_unattended_agent_launch(self) -> None:
+        panel = (self.root / "Panel.qml").read_text()
+
+        self.assertIn("Unattended mode", panel)
+        self.assertIn("auto-approve actions", panel)
+        self.assertIn("Recalled memory is untrusted", panel)
+        self.assertIn('Accessible.name: "Unattended agent safety warning"', panel)
