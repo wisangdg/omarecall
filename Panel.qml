@@ -21,16 +21,16 @@ Item {
     return String(Quickshell.env("HOME") || "")
   }
   readonly property var agentOptions: [
-    { key: "", label: "Omarchy default" },
-    { key: "claude", label: "Claude" },
-    { key: "codex", label: "Codex" },
-    { key: "copilot", label: "Copilot" },
-    { key: "crush", label: "Crush" },
-    { key: "grok", label: "Grok" },
-    { key: "omp", label: "Oh My Pi" },
-    { key: "opencode", label: "OpenCode" },
-    { key: "pi", label: "Pi" },
-    { key: "agy", label: "Antigravity" }
+    { value: "", label: "Omarchy default" },
+    { value: "claude", label: "Claude" },
+    { value: "codex", label: "Codex" },
+    { value: "copilot", label: "Copilot" },
+    { value: "crush", label: "Crush" },
+    { value: "grok", label: "Grok" },
+    { value: "omp", label: "Oh My Pi" },
+    { value: "opencode", label: "OpenCode" },
+    { value: "pi", label: "Pi" },
+    { value: "agy", label: "Antigravity" }
   ]
 
   property var shell: null
@@ -56,7 +56,7 @@ Item {
     ? String(selectedSession.status) : ""
   readonly property string selectedAgentLabel: {
     for (var index = 0; index < agentOptions.length; index++) {
-      if (agentOptions[index].key === selectedAgent)
+      if (agentOptions[index].value === selectedAgent)
         return agentOptions[index].label
     }
     return "Omarchy default"
@@ -123,6 +123,11 @@ Item {
     listProcess.running = true
   }
 
+  function continuationGoal(title) {
+    var cleaned = String(title || "project work").trim()
+    return /^continue:\s*/i.test(cleaned) ? cleaned : "Continue: " + cleaned
+  }
+
   function selectSession(index) {
     if (index < 0 || index >= root.sessions.length) return
     root.selectedIndex = index
@@ -130,7 +135,7 @@ Item {
     var session = root.sessions[index]
     projectInput.text = String(session.project_path || "")
     if (goalInput.text.trim() === "")
-      goalInput.text = "Continue: " + String(session.title || "project work")
+      goalInput.text = root.continuationGoal(session.title)
     root.busy = true
     root.errorText = ""
     showProcess.command = [root.cli, "session", "show", String(session.id),
@@ -537,7 +542,7 @@ Item {
 
     Shortcut {
       sequence: "Escape"
-      enabled: root.opened
+      enabled: root.opened && !agentSelector.popupOpen
       onActivated: root.backOrClose()
     }
 
@@ -851,29 +856,24 @@ Item {
               Accessible.name: "New agent session goal"
             }
 
-            Row {
+            Ui.Dropdown {
+              id: agentSelector
               width: parent.width
-              spacing: Style.space(7)
-              Text {
-                width: Style.space(62)
-                anchors.verticalCenter: parent.verticalCenter
-                text: "Agent"
-                color: root.dim
-                font.family: root.fontFamily
-                font.pixelSize: Style.font.caption
-              }
-              ComboBox {
-                id: agentSelector
-                width: parent.width - Style.space(62) - parent.spacing
-                model: root.agentOptions
-                textRole: "label"
-                currentIndex: 0
-                Accessible.name: "Agent launcher"
-                Accessible.description: "Choose an explicit agent or the current Omarchy default"
-                onActivated: function(index) {
-                  root.selectedAgent = String(root.agentOptions[index].key)
-                }
-              }
+              label: "Agent"
+              options: root.agentOptions
+              value: root.selectedAgent
+              foreground: root.foreground
+              fontFamily: root.fontFamily
+              Accessible.name: "Agent launcher"
+              Accessible.description: "Choose an explicit agent or the current Omarchy default"
+              onChanged: function(value) { root.selectedAgent = value }
+            }
+
+            Text {
+              text: "Memory for the new agent"
+              color: root.foreground
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
             }
 
             Row {
@@ -882,7 +882,7 @@ Item {
               Ui.Button {
                 width: (parent.width - parent.spacing * 2) / 3
                 height: Style.space(40)
-                text: "Relevant project"
+                text: "Project memory"
                 enabled: !!root.selectedSession && !root.busy
                 focusable: true
                 bordered: true
@@ -894,7 +894,7 @@ Item {
               Ui.Button {
                 width: (parent.width - parent.spacing * 2) / 3
                 height: Style.space(40)
-                text: "This session"
+                text: "Selected session"
                 enabled: !!root.selectedSession && !root.busy
                 focusable: true
                 bordered: true
@@ -906,7 +906,7 @@ Item {
               Ui.Button {
                 width: (parent.width - parent.spacing * 2) / 3
                 height: Style.space(40)
-                text: "Start clean"
+                text: "No memory"
                 enabled: !root.busy
                 focusable: true
                 bordered: true
@@ -917,6 +917,14 @@ Item {
               }
             }
 
+            Text {
+              visible: !!root.selectedSession
+              text: "Manage selected session"
+              color: root.dim
+              font.family: root.fontFamily
+              font.pixelSize: Style.font.caption
+            }
+
             Row {
               visible: !!root.selectedSession
               width: parent.width
@@ -925,6 +933,7 @@ Item {
                 text: root.selectedSession && root.selectedSession.pinned ? "Unpin" : "Pin"
                 enabled: !root.busy
                 focusable: true
+                bordered: true
                 foreground: root.foreground
                 Accessible.role: Accessible.Button
                 Accessible.name: text + " selected session"
@@ -934,6 +943,7 @@ Item {
                 text: "Complete"
                 enabled: !root.busy && root.selectedSessionStatus === "active"
                 focusable: true
+                bordered: true
                 foreground: root.foreground
                 Accessible.role: Accessible.Button
                 Accessible.name: "Mark selected session completed"
@@ -944,6 +954,7 @@ Item {
                 enabled: !root.busy && root.selectedSessionStatus !== ""
                   && root.selectedSessionStatus !== "archived"
                 focusable: true
+                bordered: true
                 foreground: root.foreground
                 Accessible.role: Accessible.Button
                 Accessible.name: "Archive selected session"
@@ -954,9 +965,9 @@ Item {
                   ? "Confirm delete" : "Delete"
                 enabled: !root.busy
                 focusable: true
-                bordered: root.deleteConfirmId === root.selectedSessionId
-                foreground: root.deleteConfirmId === root.selectedSessionId
-                  ? root.urgent : root.foreground
+                bordered: true
+                selected: root.deleteConfirmId === root.selectedSessionId
+                foreground: root.urgent
                 Accessible.role: Accessible.Button
                 Accessible.name: text + " selected session"
                 Accessible.description: root.deleteConfirmId === root.selectedSessionId

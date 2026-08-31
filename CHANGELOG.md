@@ -7,6 +7,9 @@
 - Add an accessible compact agent selector with an **Omarchy default** option.
 - Show an adjacent warning before launch that agents use unattended approval
   modes and recalled memory remains untrusted.
+- Polish the launch form with the themed Omarchy dropdown, clearer memory
+  choices, stronger session-action hierarchy, and duplicate goal-prefix
+  prevention.
 - Delegate an unknown future default through `omarchy-agent --inline --prompt`
   while continuing to reject unknown explicit agent names.
 

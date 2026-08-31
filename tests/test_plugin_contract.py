@@ -78,12 +78,25 @@ class PluginContractTests(TestCase):
             "pi": "Pi",
             "agy": "Antigravity",
         }.items():
-            self.assertIn(f'key: "{key}", label: "{label}"', panel)
-        self.assertIn("ComboBox", panel)
+            self.assertIn(f'value: "{key}", label: "{label}"', panel)
+        self.assertIn("Ui.Dropdown", panel)
+        self.assertNotIn("ComboBox {", panel)
         self.assertIn('Accessible.name: "Agent launcher"', panel)
         self.assertIn('if (root.selectedAgent !== "")', panel)
-        self.assertNotIn('key: "gemini"', panel)
+        self.assertNotIn('value: "gemini"', panel)
         self.assertNotIn('model: ["codex", "claude", "opencode"]', panel)
+
+    def test_panel_polish_uses_clear_memory_and_session_action_hierarchy(self) -> None:
+        panel = (self.root / "Panel.qml").read_text()
+
+        self.assertIn("function continuationGoal(title)", panel)
+        self.assertIn('text: "Memory for the new agent"', panel)
+        self.assertIn('text: "Project memory"', panel)
+        self.assertIn('text: "Selected session"', panel)
+        self.assertIn('text: "No memory"', panel)
+        self.assertIn('text: "Manage selected session"', panel)
+        self.assertIn("foreground: root.urgent", panel)
+        self.assertIn("enabled: root.opened && !agentSelector.popupOpen", panel)
 
     def test_preview_warns_before_unattended_agent_launch(self) -> None:
         panel = (self.root / "Panel.qml").read_text()
