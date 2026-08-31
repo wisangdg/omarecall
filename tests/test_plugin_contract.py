@@ -121,3 +121,12 @@ class PluginContractTests(TestCase):
         self.assertIn("auto-approve actions", panel)
         self.assertIn("Recalled memory is untrusted", panel)
         self.assertIn('Accessible.name: "Unattended agent safety warning"', panel)
+
+    def test_panel_smart_goal_sync_and_launch_reset(self) -> None:
+        panel = (self.root / "Panel.qml").read_text()
+
+        self.assertIn("property string autoFilledGoal", panel)
+        self.assertIn("goalInput.text === root.autoFilledGoal", panel)
+        self.assertIn("root.autoFilledGoal = nextGoal", panel)
+        self.assertIn('root.autoFilledGoal = ""', panel)
+

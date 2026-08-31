@@ -47,6 +47,7 @@ Item {
   property string noticeText: ""
   property string deleteConfirmId: ""
   property bool reopenAfterPicker: false
+  property string autoFilledGoal: ""
 
   readonly property var selectedSession: selectedIndex >= 0 && selectedIndex < sessions.length
     ? sessions[selectedIndex] : null
@@ -134,8 +135,11 @@ Item {
     sessionList.positionViewAtIndex(index, ListView.Contain)
     var session = root.sessions[index]
     projectInput.text = String(session.project_path || "")
-    if (goalInput.text.trim() === "")
-      goalInput.text = root.continuationGoal(session.title)
+    var nextGoal = root.continuationGoal(session.title)
+    if (goalInput.text.trim() === "" || goalInput.text === root.autoFilledGoal) {
+      goalInput.text = nextGoal
+      root.autoFilledGoal = nextGoal
+    }
     root.busy = true
     root.errorText = ""
     showProcess.command = [root.cli, "session", "show", String(session.id),
@@ -299,6 +303,8 @@ Item {
         if (root.sessions.length === 0) {
           root.selectedIndex = -1
           root.detail = null
+          goalInput.text = ""
+          root.autoFilledGoal = ""
         } else {
           root.selectSession(Math.max(0, Math.min(root.selectedIndex, root.sessions.length - 1)))
         }
@@ -450,6 +456,8 @@ Item {
       root.noticeText = "Agent started. Its OmaRecall session is now active."
       root.view = "history"
       root.preview = null
+      goalInput.text = ""
+      root.autoFilledGoal = ""
       root.refreshSessions()
     }
   }

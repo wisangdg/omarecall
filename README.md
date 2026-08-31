@@ -1,5 +1,7 @@
 # OmaRecall
 
+![OmaRecall](preview.png)
+
 OmaRecall is a local, inspectable memory layer for AI agent sessions on
 Omarchy. It keeps structured session notes, lets you review exactly which
 memory will be recalled, and starts a new interactive agent with that context.
