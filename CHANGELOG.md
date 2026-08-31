@@ -9,7 +9,7 @@
   modes and recalled memory remains untrusted.
 - Polish the launch form with the themed Omarchy dropdown, clearer memory
   choices, stronger session-action hierarchy, and duplicate goal-prefix
-  prevention.
+  prevention, plus a compact accessible close action.
 - Delegate an unknown future default through `omarchy-agent --inline --prompt`
   while continuing to reject unknown explicit agent names.
 
