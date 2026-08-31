@@ -600,13 +600,13 @@ Item {
             Accessible.name: "Refresh session history"
             onClicked: root.refreshSessions()
           }
-          Ui.PanelActionButton {
+          Ui.Button {
             iconText: "󰅙"
             tooltipText: "Close"
-            size: Style.space(40)
             focusable: true
             foreground: root.foreground
             fontFamily: root.fontFamily
+            iconSize: Style.font.body
             Accessible.role: Accessible.Button
             Accessible.name: "Close OmaRecall"
             onClicked: root.close()

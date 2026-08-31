@@ -97,10 +97,9 @@ class PluginContractTests(TestCase):
         self.assertIn('text: "Manage selected session"', panel)
         self.assertIn("foreground: root.urgent", panel)
         self.assertIn("enabled: root.opened && !agentSelector.popupOpen", panel)
-        self.assertIn("Ui.PanelActionButton", panel)
         self.assertIn('iconText: "󰅙"', panel)
         self.assertIn('tooltipText: "Close"', panel)
-        self.assertIn("size: Style.space(40)", panel)
+        self.assertIn("iconSize: Style.font.body", panel)
         self.assertNotIn('text: "Close"', panel)
 
     def test_preview_warns_before_unattended_agent_launch(self) -> None:
