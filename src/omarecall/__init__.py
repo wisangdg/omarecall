@@ -3,4 +3,4 @@
 from omarecall.store import SessionMetadata, SessionStore
 
 __all__ = ["SessionMetadata", "SessionStore"]
-__version__ = "0.1.0"
+__version__ = "0.3.0"

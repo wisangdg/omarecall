@@ -16,6 +16,18 @@ class PluginContractTests(TestCase):
         for entry_point in manifest["entryPoints"].values():
             self.assertTrue((self.root / entry_point).is_file())
 
+    def test_versions_are_synchronized_across_metadata_files(self) -> None:
+        import tomllib
+        import omarecall
+
+        manifest = json.loads((self.root / "manifest.json").read_text())
+        pyproject = tomllib.loads((self.root / "pyproject.toml").read_text())
+
+        version = manifest["version"]
+        self.assertEqual("0.3.0", version)
+        self.assertEqual(version, pyproject["project"]["version"])
+        self.assertEqual(version, omarecall.__version__)
+
     def test_panel_contract_has_keyboard_accessibility_and_bounded_history(self) -> None:
         panel = (self.root / "Panel.qml").read_text()
 

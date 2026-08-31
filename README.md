@@ -28,7 +28,7 @@ memory will be recalled, and starts a new interactive agent with that context.
 From a published Git repository:
 
 ```bash
-omarchy plugin add https://github.com/OWNER/omarecall.git --enable
+omarchy plugin add https://github.com/wisangdg/omarecall.git --enable
 ```
 
 For local development, commit the checkout and pass its absolute path to

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.3.0 — 2026-08-31
 
 - Expand the launcher catalog to Claude, Codex, Copilot, Crush, Grok, Oh My
   Pi, OpenCode, Pi, and Antigravity using their Omarchy interactive flags.
