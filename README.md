@@ -23,6 +23,18 @@ memory will be recalled, and starts a new interactive agent with that context.
   traversal protection.
 - Keyboard navigation and accessible labels throughout the panel.
 
+## Requirements
+
+- **Omarchy Desktop**: Omarchy Linux environment with Omarchy Shell (Quickshell / Wayland).
+- **Python**: Python 3.11 or higher (standard library only; no external `pip` packages required).
+- **Omarchy Core Utilities**:
+  - `omarchy-shell` (panel lifecycle and IPC)
+  - `omarchy-launch-tui` (interactive terminal wrapper)
+  - `omarchy-file-select` (native directory & conversation file picker)
+  - `omarchy-default-agent` (default agent resolver)
+- **Supported AI Agent CLIs** *(optional, at least one to launch sessions)*:
+  - Claude (`claude`), Codex (`codex`), GitHub Copilot (`copilot`), Crush (`crush`), Grok (`grok`), Oh My Pi (`omp`), OpenCode (`opencode`), Pi (`pi`), or Antigravity (`agy`).
+
 ## Install
 
 From a published Git repository:
