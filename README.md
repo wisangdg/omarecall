@@ -52,6 +52,16 @@ Open the panel from its bar icon or with:
 omarchy-shell shell toggle wdg.omarecall
 ```
 
+## Uninstall
+
+To remove the plugin:
+
+```bash
+omarchy plugin remove wdg.omarecall
+```
+
+Session data in `${XDG_DATA_HOME:-~/.local/share}/omarecall/` is preserved. To remove stored session history as well, delete that directory manually.
+
 ## How launch works
 
 1. Select a previous session, or enter a project path for a clean start.
@@ -141,3 +151,8 @@ omarchy plugin validate .
 qmlformat -n BarWidget.qml >/dev/null
 qmlformat -n Panel.qml >/dev/null
 ```
+
+## License
+
+[MIT](LICENSE) © 2026 wdg
+
