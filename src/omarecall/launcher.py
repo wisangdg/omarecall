@@ -142,7 +142,7 @@ class AgentLauncher:
         if context.packet:
             context_path = self.store.save_context_packet(session.id, context.packet)
 
-        bootstrap = self._bootstrap_prompt(session, context_path)
+        bootstrap = self._bootstrap_prompt(session, request.goal, context_path)
         argv = self._agent_command(
             agent=agent,
             executable=executable,
@@ -174,7 +174,7 @@ class AgentLauncher:
         return plan
 
     def _bootstrap_prompt(
-        self, session: SessionMetadata, context_path: Path | None
+        self, session: SessionMetadata, goal: str, context_path: Path | None
     ) -> str:
         checkpoint = " ".join(
             [
@@ -183,7 +183,12 @@ class AgentLauncher:
                 shlex.quote(session.id),
             ]
         )
-        lines = [f"OmaRecall session: {session.id}."]
+        lines = [
+            f"OmaRecall session: {session.id}.",
+            "Active goal for this session (authoritative user request):",
+            goal,
+            "Start working toward this goal immediately.",
+        ]
         if context_path:
             lines.extend(
                 [

@@ -120,6 +120,15 @@ class AgentLauncherTests(TestCase):
                 )
                 self.assertEqual(tuple(prefix), plan.agent_argv[:-1])
                 self.assertIn("OmaRecall session:", plan.agent_argv[-1])
+                self.assertIn(
+                    "Active goal for this session (authoritative user request):",
+                    plan.agent_argv[-1],
+                )
+                self.assertIn("Continue the work", plan.agent_argv[-1])
+                self.assertIn(
+                    "Start working toward this goal immediately.",
+                    plan.agent_argv[-1],
+                )
                 self.assertIn("checkpoint", plan.agent_argv[-1])
 
     def test_missing_agent_binary_is_rejected_before_session_creation(self) -> None:
