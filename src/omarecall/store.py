@@ -484,6 +484,8 @@ class SessionStore:
         completed: Iterable[str] = (),
         decisions: Iterable[str] = (),
         pending: Iterable[str] = (),
+        resolve_pending: Iterable[str] = (),
+        remove_pending: Iterable[str] = (),
         files: Iterable[str] = (),
         warnings: Iterable[str] = (),
         status: str | None = None,
@@ -512,6 +514,17 @@ class SessionStore:
                 cleaned = value.strip()
                 if cleaned and cleaned not in existing:
                     existing.append(cleaned)
+
+        # Exact text matching avoids resolving a different, similarly named task.
+        # Repeated commands are harmless; only existing pending items are moved.
+        resolved = {value.strip() for value in resolve_pending if value.strip()}
+        removed = {value.strip() for value in remove_pending if value.strip()}
+        for value in sections["Pending"]:
+            if value in resolved and value not in sections["Completed"]:
+                sections["Completed"].append(value)
+        sections["Pending"] = [
+            value for value in sections["Pending"] if value not in resolved | removed
+        ]
 
         updated = SessionMetadata(
             id=metadata.id,
@@ -706,6 +719,7 @@ class SessionStore:
     ) -> str:
         lines = [
             "---",
+            "note_format: 2",
             f"id: {metadata.id}",
             f"project: {metadata.project_name}",
             f"agent: {metadata.agent}",
@@ -719,10 +733,13 @@ class SessionStore:
         for section in NOTE_SECTIONS:
             lines.append(f"## {section}")
             values = sections.get(section, [])
-            if section == "Goal":
-                lines.extend(values)
-            else:
-                lines.extend(f"- {value}" for value in values)
+            for value in values:
+                first, *continuation = value.split("\n")
+                if section == "Goal" and not first.startswith(("## ", "  ", "- ")):
+                    lines.append(first)
+                else:
+                    lines.append(f"- {first}")
+                lines.extend(f"  {line}" for line in continuation)
             lines.append("")
         return "\n".join(lines)
 
@@ -730,12 +747,21 @@ class SessionStore:
     def _parse_note(note: str) -> dict[str, list[str]]:
         sections = {name: [] for name in NOTE_SECTIONS}
         current: str | None = None
-        in_frontmatter = note.startswith("---\n")
-        for line in note.splitlines():
-            if line == "---" and in_frontmatter:
-                in_frontmatter = False
-                continue
-            if in_frontmatter:
+        lines = note.replace("\r\n", "\n").split("\n")
+        version_two = False
+        if lines and lines[0] == "---":
+            try:
+                end = lines.index("---", 1)
+            except ValueError as exc:
+                raise StoreCorruptError("Session note has unclosed frontmatter") from exc
+            version_two = "note_format: 2" in lines[1:end]
+            lines = lines[end + 1:]
+        for line in lines:
+            if version_two and current is not None and line.startswith("  "):
+                if sections[current]:
+                    sections[current][-1] += "\n" + line[2:]
+                else:
+                    sections[current].append(line[2:])
                 continue
             if line.startswith("## "):
                 candidate = line[3:].strip()
@@ -744,7 +770,7 @@ class SessionStore:
             if current is None or not line.strip():
                 continue
             value = line[2:] if line.startswith("- ") else line
-            if value not in sections[current]:
+            if version_two or value not in sections[current]:
                 sections[current].append(value)
         return sections
 
@@ -883,6 +909,7 @@ class SessionStore:
                 _close_registered_lock_descriptor(descriptor)
 
     def _secure_mkdir(self, path: Path) -> None:
+        self._reject_symlink(path, allow_missing=True)
         if path == self.root:
             if path.exists() or path.is_symlink():
                 self._reject_symlink(path)
@@ -932,11 +959,16 @@ class SessionStore:
 
     @staticmethod
     def _reject_symlink(path: Path, *, allow_missing: bool = False) -> None:
-        try:
-            mode = path.lstat().st_mode
-        except FileNotFoundError:
-            if allow_missing:
-                return
-            raise
-        if stat.S_ISLNK(mode):
-            raise InvalidDataPathError(f"Symbolic links are not allowed: {path}")
+        absolute = path.absolute()
+        if ".." in absolute.parts:
+            raise InvalidDataPathError(f"Parent traversal is not allowed: {path}")
+        # lstat on the leaf alone follows symlinks in every parent directory.
+        for component in (*reversed(absolute.parents), absolute):
+            try:
+                mode = component.lstat().st_mode
+            except FileNotFoundError:
+                if allow_missing:
+                    return
+                raise
+            if stat.S_ISLNK(mode):
+                raise InvalidDataPathError(f"Symbolic links are not allowed: {component}")

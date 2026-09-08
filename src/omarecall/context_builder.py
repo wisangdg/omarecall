@@ -83,7 +83,7 @@ class ContextBuilder:
         truncated = False
         consumed = 0
 
-        for metadata in sessions:
+        for index, metadata in enumerate(sessions):
             _, sections = self.store.get_session_sections(metadata.id)
             block = self._render_session(metadata, sections)
             transcript = self.store.get_imported_conversation(metadata.id)
@@ -92,7 +92,9 @@ class ContextBuilder:
             redacted = self.redactor.redact(block)
             block = redacted.text
             remaining = available - consumed
-            if len(block) <= remaining:
+            # Keep room for the marker until we know this is the last source.
+            reserve = len(marker) if index < len(sessions) - 1 else 0
+            if len(block) <= remaining - reserve:
                 body_parts.append(block)
                 sources.append(metadata.id)
                 redaction_count += redacted.redaction_count

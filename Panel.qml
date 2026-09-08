@@ -48,6 +48,7 @@ Item {
   property string deleteConfirmId: ""
   property bool reopenAfterPicker: false
   property string autoFilledGoal: ""
+  property string refreshSelectionId: ""
 
   readonly property var selectedSession: selectedIndex >= 0 && selectedIndex < sessions.length
     ? sessions[selectedIndex] : null
@@ -117,7 +118,9 @@ Item {
     root.close()
   }
 
-  function refreshSessions() {
+  function refreshSessions(preferredId) {
+    root.refreshSelectionId = preferredId === undefined
+      ? root.selectedSessionId : String(preferredId)
     root.busy = true
     root.errorText = ""
     listProcess.running = false
@@ -199,7 +202,7 @@ Item {
       goalInput.forceActiveFocus()
       return
     }
-    if (mode !== "clean" && !root.selectedSession) {
+    if (mode === "session" && !root.selectedSession) {
       root.errorText = "Select a previous session first."
       return
     }
@@ -209,7 +212,7 @@ Item {
     if (mode === "session")
       args.push("--session-id", String(root.selectedSession.id))
     else if (mode === "relevant")
-      args.push("--project-id", String(root.selectedSession.project_id))
+      args.push("--project", projectInput.text.trim())
     root.busy = true
     contextProcess.command = args
     contextProcess.running = false
@@ -306,7 +309,12 @@ Item {
           goalInput.text = ""
           root.autoFilledGoal = ""
         } else {
-          root.selectSession(Math.max(0, Math.min(root.selectedIndex, root.sessions.length - 1)))
+          var nextIndex = root.sessions.findIndex(function(session) {
+            return String(session.id) === root.refreshSelectionId
+          })
+          if (nextIndex < 0)
+            nextIndex = Math.max(0, Math.min(root.selectedIndex, root.sessions.length - 1))
+          root.selectSession(nextIndex)
         }
       } catch (error) {
         root.errorText = "OmaRecall returned invalid session data."
@@ -391,8 +399,10 @@ Item {
         root.errorText = root.commandError(importErr.text, "Could not import the conversation.")
         return
       }
+      var importedId = ""
       try {
         var payload = JSON.parse(importOut.text)
+        importedId = String(payload.session.id)
         var summary = payload.import || ({})
         var count = Number(summary.message_count || 0)
         var warnings = Array.isArray(summary.warnings) ? summary.warnings : []
@@ -404,8 +414,7 @@ Item {
       } catch (error) {
         root.noticeText = "Conversation imported. Select This session to preview it."
       }
-      root.selectedIndex = 0
-      root.refreshSessions()
+      root.refreshSessions(importedId)
     }
   }
 
@@ -458,7 +467,10 @@ Item {
       root.preview = null
       goalInput.text = ""
       root.autoFilledGoal = ""
-      root.refreshSessions()
+      var launchedId = ""
+      try { launchedId = String(JSON.parse(launchOut.text).launch.session.id) }
+      catch (error) {}
+      root.refreshSessions(launchedId)
     }
   }
 
@@ -894,7 +906,7 @@ Item {
                 width: (parent.width - parent.spacing * 2) / 3
                 height: Style.space(40)
                 text: "Project memory"
-                enabled: !!root.selectedSession && !root.busy
+                enabled: projectInput.text.trim() !== "" && !root.busy
                 focusable: true
                 bordered: true
                 foreground: root.foreground

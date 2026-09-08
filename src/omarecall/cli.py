@@ -53,6 +53,14 @@ def _parser() -> argparse.ArgumentParser:
     checkpoint.add_argument("--completed", action="append", default=[])
     checkpoint.add_argument("--decision", action="append", default=[])
     checkpoint.add_argument("--pending", action="append", default=[])
+    checkpoint.add_argument(
+        "--resolve-pending", action="append", default=[], metavar="TEXT",
+        help="Move an exact pending item to Completed (repeatable)",
+    )
+    checkpoint.add_argument(
+        "--remove-pending", action="append", default=[], metavar="TEXT",
+        help="Remove an exact pending item without marking it completed (repeatable)",
+    )
     checkpoint.add_argument("--file", action="append", default=[])
     checkpoint.add_argument("--warning", action="append", default=[])
     checkpoint.add_argument(
@@ -82,7 +90,9 @@ def _parser() -> argparse.ArgumentParser:
     build = context_commands.add_parser("build")
     build.add_argument("--mode", required=True, choices=("clean", "session", "relevant"))
     build.add_argument("--session-id")
-    build.add_argument("--project-id")
+    project = build.add_mutually_exclusive_group()
+    project.add_argument("--project-id")
+    project.add_argument("--project", type=Path, help="Resolve context from a project directory")
     build.add_argument("--max-tokens", type=int, default=8_000)
 
     launch = commands.add_parser("launch", help="Start an agent with selected memory")
@@ -133,10 +143,13 @@ def _dispatch(args: argparse.Namespace, store: SessionStore) -> dict[str, Any]:
         plan = launcher.prepare(request) if args.dry_run else launcher.launch(request)
         return {"ok": True, "launch": plan.to_dict()}
     if args.command == "context" and args.context_command == "build":
+        project_id = args.project_id
+        if args.project is not None:
+            project_id, _, _ = store.project_identity(args.project)
         context = ContextBuilder(store).build(
             mode=args.mode,
             session_id=args.session_id,
-            project_id=args.project_id,
+            project_id=project_id,
             max_tokens=args.max_tokens,
         )
         return {"ok": True, "context": context.to_dict()}
@@ -162,6 +175,8 @@ def _dispatch(args: argparse.Namespace, store: SessionStore) -> dict[str, Any]:
             completed=args.completed,
             decisions=args.decision,
             pending=args.pending,
+            resolve_pending=args.resolve_pending,
+            remove_pending=args.remove_pending,
             files=args.file,
             warnings=args.warning,
             status=args.status,

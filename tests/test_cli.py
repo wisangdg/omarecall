@@ -65,11 +65,63 @@ class CliTests(TestCase):
         self.assertEqual("archived", archived["session"]["status"])
         self.assertEqual(1, reindexed["session_count"])
 
+    def test_pending_resolution_removal_and_recall_are_consistent(self) -> None:
+        _, created = self.run_cli(
+            "session", "create", "--project", str(self.project_dir),
+            "--agent", "codex", "--goal", "Build CLI",
+        )
+        session_id = created["session"]["id"]
+        self.run_cli(
+            "checkpoint", session_id, "--pending", "Build UI",
+            "--pending", "Build UI tests", "--pending", "Obsolete task",
+            "--pending", "Write docs",
+        )
+        for _ in range(2):
+            code, _ = self.run_cli(
+                "checkpoint", session_id, "--resolve-pending", " Build UI ",
+                "--resolve-pending", "Write docs",
+                "--remove-pending", "Obsolete task",
+                "--remove-pending", "Missing task",
+            )
+            self.assertEqual(0, code)
+        code, result = self.run_cli(
+            "context", "build", "--mode", "session", "--session-id", session_id,
+        )
+        self.assertEqual(0, code)
+        packet = result["context"]["packet"]
+        self.assertIn("#### Pending\n- Build UI tests\n", packet)
+        self.assertIn("#### Completed\n- Build UI\n- Write docs\n", packet)
+        self.assertEqual(1, packet.count("- Build UI\n"))
+        self.assertNotIn("Obsolete task", packet)
+        self.assertNotIn("Missing task", packet)
+
     def test_error_is_machine_readable_and_nonzero(self) -> None:
         exit_code, output = self.run_cli("session", "show", "missing")
 
         self.assertEqual(2, exit_code)
         self.assertEqual("session_not_found", output["error"]["code"])
+
+    def test_project_path_preview_matches_launch_after_switching_projects(self) -> None:
+        from omarecall.launcher import AgentLauncher, LaunchRequest
+        from omarecall.store import SessionStore
+
+        other = Path(self.temp_dir) / "other project"
+        other.mkdir()
+        for project, goal in ((self.project_dir, "Original project"), (other, "Chosen project")):
+            self.run_cli("session", "create", "--project", str(project),
+                         "--agent", "codex", "--goal", goal)
+        code, result = self.run_cli("context", "build", "--mode", "relevant",
+                                    "--project", str(other))
+        self.assertEqual(0, code)
+        self.assertIn("Chosen project", result["context"]["packet"])
+        self.assertNotIn("Original project", result["context"]["packet"])
+        launcher = AgentLauncher(SessionStore(self.data_dir),
+                                 executable_resolver=lambda name: "/mock/" + name)
+        plan = launcher.prepare(LaunchRequest(
+            project_path=other, agent="codex", goal="Continue", mode="relevant",
+            expected_context_fingerprint=result["context"]["fingerprint"],
+        ))
+        self.assertEqual(str(other), plan.cwd)
 
     def test_context_build_returns_preview_payload(self) -> None:
         _, created = self.run_cli(

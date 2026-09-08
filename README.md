@@ -131,8 +131,11 @@ does not automatically capture sessions started elsewhere.
 ./bin/omarecall session list --limit 100
 ./bin/omarecall session show SESSION_ID
 ./bin/omarecall checkpoint SESSION_ID --completed "Implemented storage"
+./bin/omarecall checkpoint SESSION_ID --resolve-pending "Add context builder"
+./bin/omarecall checkpoint SESSION_ID --remove-pending "Obsolete task"
 ./bin/omarecall import --file conversation.md --project "$PWD"
 ./bin/omarecall context build --mode session --session-id SESSION_ID
+./bin/omarecall context build --mode relevant --project "$PWD"
 ./bin/omarecall launch --agent codex --project "$PWD" \
   --goal "Continue the work" --mode session --session-id SESSION_ID
 ./bin/omarecall launch --project "$PWD" --goal "Use my Omarchy default" \
@@ -142,9 +145,36 @@ does not automatically capture sessions started elsewhere.
 Every successful command prints JSON to stdout. Expected errors print a stable
 JSON error object to stderr and exit with status 2.
 
+Use `--resolve-pending` to move a finished item from Pending to Completed, or
+`--remove-pending` to drop work that is no longer needed. Both flags can be
+repeated and match the full item text, ignoring leading and trailing whitespace.
+Missing items are ignored, so retrying a checkpoint does not duplicate completed
+work. When combined with `--pending`, additions happen first; resolution and
+removal then apply to the resulting list. Resolution takes precedence if both
+flags name the same item. These operations affect only the specified session.
+
+Refreshing panel history preserves the selected session even when checkpoints,
+pinning, or status changes reorder the list. A successful import or launch selects
+the newly created session.
+
+Project memory uses the project directory entered in the panel for both preview
+and launch. It does not require selecting an existing session. The CLI accepts
+either `--project` or `--project-id` for relevant context.
+
+Newly written notes use `note_format: 2` in their frontmatter and indent multiline
+continuations so Markdown headings and blank lines remain part of the same item.
+Existing notes remain readable and are upgraded when updated. Content already
+lost by an earlier rewrite cannot be recovered automatically.
+
+The context budget includes the memory envelope and truncation marker. Token
+counts are estimates based on four characters per token, not model tokenization.
+
 ## Development
 
 The runtime uses only the Python standard library.
+
+Node.js is optional for development; when available, the test suite also runs
+panel JavaScript behavior tests. These do not replace testing the live QML UI.
 
 ```bash
 PYTHONPATH=src python3 -m unittest discover -s tests -v
@@ -157,4 +187,3 @@ qmlformat -n Panel.qml >/dev/null
 ## License
 
 [MIT](LICENSE) © 2026 wdg
-

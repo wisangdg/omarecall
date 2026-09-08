@@ -322,6 +322,81 @@ class SessionStoreTests(TestCase):
         with self.assertRaisesRegex(InvalidSessionError, "Invalid session ID"):
             self.store.get_session("../outside")
 
+    def test_symlink_ancestors_block_reads_writes_and_deletes(self) -> None:
+        session = self.create_session()
+        session_dir = self.data_dir / "projects" / session.project_id / "sessions" / session.id
+        # Exercise each level, including a symlink above the store root.
+        for directory in (session_dir, session_dir.parent, session_dir.parent.parent,
+                          self.data_dir / "projects", self.data_dir):
+            with self.subTest(directory=directory):
+                external = Path(self.temp_dir) / "external"
+                directory.rename(external)
+                directory.symlink_to(external, target_is_directory=True)
+                before = {str(p.relative_to(external)): p.read_bytes()
+                          for p in external.rglob("*") if p.is_file()}
+                try:
+                    for action in (
+                        lambda: self.store.get_session(session.id),
+                        lambda: self.store.add_checkpoint(session.id, completed=["unsafe"]),
+                        lambda: self.store.save_context_packet(session.id, "unsafe"),
+                        lambda: self.store.delete_session(session.id),
+                        self.store.reindex,
+                    ):
+                        with self.assertRaises(InvalidDataPathError):
+                            action()
+                    after = {str(p.relative_to(external)): p.read_bytes()
+                             for p in external.rglob("*") if p.is_file()}
+                    self.assertEqual(before, after)
+                finally:
+                    directory.unlink()
+                    external.rename(directory)
+
+    def test_initialize_rejects_symlink_above_missing_root_without_creating_files(self) -> None:
+        external = Path(self.temp_dir) / "external"
+        external.mkdir()
+        linked = Path(self.temp_dir) / "linked"
+        linked.symlink_to(external, target_is_directory=True)
+        with self.assertRaises(InvalidDataPathError):
+            SessionStore(linked / "new-data").initialize()
+        self.assertEqual([], list(external.iterdir()))
+
+    def test_multiline_checkpoint_survives_rewrite_and_resolution(self) -> None:
+        goal = "## Goal inside content\n\n- nested item\n  indentation"
+        session = self.create_session(goal=goal)
+        items = ["Same first line\n## Unknown heading\n\nline two",
+                 "Same first line\n## Pending\n- nested item\n  indentation"]
+        self.store.add_checkpoint(session.id, pending=items)
+        self.store.set_pinned(session.id, True)
+        _, sections = self.store.get_session_sections(session.id)
+        self.assertEqual([goal], sections["Goal"])
+        self.assertEqual(items, sections["Pending"])
+        self.store.add_checkpoint(session.id, resolve_pending=[items[0]])
+        _, sections = self.store.get_session_sections(session.id)
+        self.assertEqual([items[1]], sections["Pending"])
+        self.assertEqual([items[0]], sections["Completed"])
+
+    def test_legacy_note_can_be_read_and_upgraded(self) -> None:
+        session = self.create_session()
+        path = self.data_dir / "projects" / session.project_id / "sessions" / session.id / "note.md"
+        path.write_text("---\nid: legacy\n---\n\n## Goal\nOld goal\n\n"
+                        "## Pending\n- Old task\n\n## Completed\n- Old work\n")
+        self.store.add_checkpoint(session.id, pending=["New task\n## Heading\nMore"])
+        _, sections = self.store.get_session_sections(session.id)
+        self.assertEqual(["Old goal"], sections["Goal"])
+        self.assertEqual(["Old task", "New task\n## Heading\nMore"], sections["Pending"])
+        self.assertEqual(["Old work"], sections["Completed"])
+
+    def test_windows_line_endings_preserve_multiline_items(self) -> None:
+        session = self.create_session()
+        item = "First line\n## Nested heading\n\nLast line"
+        self.store.add_checkpoint(session.id, pending=[item])
+        path = (self.data_dir / "projects" / session.project_id
+                / "sessions" / session.id / "note.md")
+        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
+        self.store.set_pinned(session.id, True)
+        _, sections = self.store.get_session_sections(session.id)
+        self.assertEqual([item], sections["Pending"])
+
     def test_non_regular_note_is_rejected_without_reading_it(self) -> None:
         session = self.create_session()
         session_dir = (

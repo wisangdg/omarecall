@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased
+
+- Resolve or remove individual pending tasks through repeatable checkpoint flags.
+- Preserve panel selection by session ID and select newly imported or launched sessions.
+- Include the selected data directory in agent checkpoint instructions.
+- Reject symlink ancestors before accessing or creating store entries.
+- Preserve multiline checkpoint content using a backward-readable note parser
+  and a versioned Markdown format for new writes.
+- Build project previews from the entered project directory, matching launch.
+- Reserve space for truncation markers within the context character budget.
+
 ## 0.3.0 — 2026-08-31
 
 - Expand the launcher catalog to Claude, Codex, Copilot, Crush, Grok, Oh My

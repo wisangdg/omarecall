@@ -1,12 +1,25 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from pathlib import Path
 from unittest import TestCase
 
 
 class PluginContractTests(TestCase):
     root = Path(__file__).parents[1]
+
+    def test_panel_selection_and_project_preview_behavior(self) -> None:
+        node = shutil.which("node")
+        if node is None:
+            self.skipTest("Node.js is required for panel JavaScript behavior tests")
+        result = subprocess.run(
+            [node, str(self.root / "tests" / "panel_behavior.cjs"),
+             str(self.root / "Panel.qml")],
+            capture_output=True, text=True, timeout=10,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
 
     def test_manifest_exposes_panel_and_bar_widget(self) -> None:
         manifest = json.loads((self.root / "manifest.json").read_text())
@@ -129,4 +142,3 @@ class PluginContractTests(TestCase):
         self.assertIn("goalInput.text === root.autoFilledGoal", panel)
         self.assertIn("root.autoFilledGoal = nextGoal", panel)
         self.assertIn('root.autoFilledGoal = ""', panel)
-

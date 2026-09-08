@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import shlex
+import subprocess
 import tempfile
 from datetime import UTC, datetime
 from pathlib import Path
@@ -74,6 +77,19 @@ class AgentLauncherTests(TestCase):
 
         self.assertIsNone(plan.context_path)
         self.assertIn("checkpoint", " ".join(plan.agent_argv))
+
+    def test_bootstrap_checkpoint_uses_custom_store_from_project_directory(self) -> None:
+        store = SessionStore(Path(self.temp_dir) / "custom data")
+        launcher = AgentLauncher(store, executable_resolver=self.executable)
+        plan = launcher.prepare(self.request(mode="clean", source_session_id=None))
+        command = next(line.strip() for line in plan.agent_argv[-1].splitlines()
+                       if line.startswith("  ") and "--completed" in line)
+        result = subprocess.run(shlex.split(command), cwd=self.project,
+                                capture_output=True, text=True, timeout=10)
+        self.assertEqual(0, result.returncode, result.stderr)
+        self.assertEqual(plan.session.id, json.loads(result.stdout)["session"]["id"])
+        _, sections = store.get_session_sections(plan.session.id)
+        self.assertEqual(["..."], sections["Completed"])
 
     def test_supported_adapters_build_interactive_commands(self) -> None:
         cases = {

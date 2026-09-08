@@ -179,6 +179,8 @@ class AgentLauncher:
         checkpoint = " ".join(
             [
                 shlex.quote(str(self.cli_path)),
+                "--data-dir",
+                shlex.quote(str(self.store.root.resolve())),
                 "checkpoint",
                 shlex.quote(session.id),
             ]
@@ -200,6 +202,8 @@ class AgentLauncher:
             [
                 "Record meaningful progress during the session with this local command:",
                 f"  {checkpoint} --completed '...' --decision '...' --pending '...'",
+                "Use --resolve-pending 'exact pending text' to move a finished item to",
+                "Completed, or --remove-pending 'exact pending text' to drop obsolete work.",
                 "Repeat flags as needed. Before finishing, write a final checkpoint and set",
                 "--status completed, or --status interrupted when work remains blocked.",
             ]

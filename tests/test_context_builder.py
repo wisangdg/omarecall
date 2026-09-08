@@ -154,6 +154,34 @@ class ContextBuilderTests(TestCase):
         with self.assertRaises(InvalidContextRequestError):
             self.builder.build(mode="unknown")
 
+    def test_budget_holds_when_previous_source_nearly_fills_packet(self) -> None:
+        # Derive block size from a real packet, then leave less than marker space.
+        for tokens in (128, 180, 256):
+            for remaining in (0, 1, 10, 28):
+                with self.subTest(tokens=tokens, remaining=remaining):
+                    self.store.set_pinned(self.second.id, True)
+                    base = self.builder.build(mode="session", session_id=self.second.id)
+                    # Relevant's mode label has one extra character.
+                    additional = tokens * 4 - (len(base.packet) + 1) - remaining
+                    if additional <= 0:
+                        continue
+                    note_path = (self.store.root / "projects" / self.second.project_id
+                                 / "sessions" / self.second.id / "note.md")
+                    original = note_path.read_text()
+                    note_path.write_text(original.replace("Review context behavior",
+                                                          "Review context behavior" + "x" * additional))
+                    try:
+                        result = self.builder.build(mode="relevant",
+                                                    project_id=self.first.project_id,
+                                                    max_tokens=tokens)
+                        self.assertLessEqual(len(result.packet), tokens * 4)
+                        self.assertLessEqual(result.estimated_tokens, tokens)
+                        self.assertTrue(result.truncated)
+                        self.assertIn("[TRUNCATED TO CONTEXT BUDGET]", result.packet)
+                        self.assertTrue(result.packet.endswith("[END OMARECALL MEMORY]"))
+                    finally:
+                        note_path.write_text(original)
+
     def test_context_fingerprint_changes_with_source_note(self) -> None:
         before = self.builder.build(mode="session", session_id=self.first.id)
         self.store.add_checkpoint(self.first.id, pending=["New work discovered"])
