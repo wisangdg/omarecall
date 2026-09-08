@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.0 — 2026-09-08
 
 - Resolve or remove individual pending tasks through repeatable checkpoint flags.
 - Preserve panel selection by session ID and select newly imported or launched sessions.
@@ -10,6 +10,7 @@
   and a versioned Markdown format for new writes.
 - Build project previews from the entered project directory, matching launch.
 - Reserve space for truncation markers within the context character budget.
+- Preserve multiline notes when files use Windows (CRLF) line endings.
 
 ## 0.3.0 — 2026-08-31
 

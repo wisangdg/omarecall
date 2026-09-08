@@ -37,7 +37,7 @@ class PluginContractTests(TestCase):
         pyproject = tomllib.loads((self.root / "pyproject.toml").read_text())
 
         version = manifest["version"]
-        self.assertEqual("0.3.0", version)
+        self.assertEqual("0.4.0", version)
         self.assertEqual(version, pyproject["project"]["version"])
         self.assertEqual(version, omarecall.__version__)
 
