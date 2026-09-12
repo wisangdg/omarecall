@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1 — 2026-09-12
+
+- Finalize each launched session when its agent exits. Sessions that never
+  receive a final `completed` checkpoint are now marked `interrupted` instead
+  of staying `active` forever, so the bar badge reflects real running agents.
+
 ## 0.4.0 — 2026-09-08
 
 - Resolve or remove individual pending tasks through repeatable checkpoint flags.
