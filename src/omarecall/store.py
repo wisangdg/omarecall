@@ -553,6 +553,16 @@ class SessionStore:
         return self.add_checkpoint(session_id, status="archived", now=now)
 
     @_store_locked
+    def mark_interrupted_if_active(
+        self, session_id: str, *, now: datetime | None = None
+    ) -> SessionMetadata:
+        """Close an agent session that ended without writing a final checkpoint."""
+        metadata = self.get_session_metadata(session_id)
+        if metadata.status != "active":
+            return metadata
+        return self.add_checkpoint(session_id, status="interrupted", now=now)
+
+    @_store_locked
     def set_pinned(
         self,
         session_id: str,

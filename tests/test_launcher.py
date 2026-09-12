@@ -245,3 +245,12 @@ class AgentLauncherTests(TestCase):
         self.assertEqual(list(plan.agent_argv), outer_argv[-len(plan.agent_argv) :])
         self.assertEqual(str(self.project.resolve()), process_factory.call_args.kwargs["cwd"])
         self.assertTrue(process_factory.call_args.kwargs["start_new_session"])
+        for stream in ("stdin", "stdout", "stderr"):
+            self.assertEqual(subprocess.DEVNULL, process_factory.call_args.kwargs[stream])
+        # The agent runs behind the lifecycle wrapper so the session closes
+        # when the agent exits without writing a final checkpoint.
+        self.assertIn("run-agent", outer_argv)
+        wrapper_index = outer_argv.index("run-agent")
+        self.assertEqual(plan.session.id, outer_argv[wrapper_index + 1])
+        self.assertEqual("--", outer_argv[wrapper_index + 2])
+        self.assertIn(str(self.store.root.resolve()), outer_argv)

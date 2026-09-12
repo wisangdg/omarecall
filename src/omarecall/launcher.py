@@ -165,12 +165,27 @@ class AgentLauncher:
         if not terminal:
             raise UnsupportedAgentError("omarchy-launch-tui is not installed")
         plan = self.prepare(request)
+        # Run the agent through `run-agent` so the session is finalized as
+        # interrupted when the agent exits without writing its own checkpoint.
         argv = [
             terminal,
             "--app-id=org.omarchy.agent",
+            str(self.cli_path),
+            "--data-dir",
+            str(self.store.root.resolve()),
+            "run-agent",
+            plan.session.id,
+            "--",
             *plan.agent_argv,
         ]
-        self.process_factory(argv, cwd=plan.cwd, start_new_session=True)
+        self.process_factory(
+            argv,
+            cwd=plan.cwd,
+            start_new_session=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
         return plan
 
     def _bootstrap_prompt(

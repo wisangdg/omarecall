@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import argparse
 import json
+import signal
+import subprocess
 import sys
 from pathlib import Path
 from typing import Any, Sequence
@@ -105,7 +107,56 @@ def _parser() -> argparse.ArgumentParser:
     launch.add_argument("--max-tokens", type=int, default=8_000)
     launch.add_argument("--dry-run", action="store_true")
     launch.add_argument("--expect-context")
+
+    run_agent = commands.add_parser(
+        "run-agent", help="Run an agent in the current terminal and finalize its session"
+    )
+    run_agent.add_argument("session_id")
+    run_agent.add_argument("agent_argv", nargs=argparse.REMAINDER)
     return parser
+
+
+def _agent_signals() -> None:
+    """Let Ctrl-C reach the agent while still finalizing the session on shutdown."""
+    try:
+        signal.signal(signal.SIGINT, lambda signum, frame: None)
+    except (AttributeError, ValueError, OSError):
+        pass
+
+    def _terminate(signum: int, frame: object) -> None:
+        raise KeyboardInterrupt
+
+    for name in ("SIGHUP", "SIGTERM"):
+        number = getattr(signal, name, None)
+        if number is None:
+            continue
+        try:
+            signal.signal(number, _terminate)
+        except (ValueError, OSError):
+            pass
+
+
+def _run_agent(store: SessionStore, session_id: str, argv: Sequence[str]) -> int:
+    command = list(argv)
+    if command and command[0] == "--":
+        command = command[1:]
+    if not command:
+        raise InvalidSessionError("run-agent requires an agent command")
+    _agent_signals()
+    exit_code = 0
+    try:
+        try:
+            exit_code = subprocess.run(command, check=False).returncode
+        except FileNotFoundError:
+            exit_code = 127
+    except KeyboardInterrupt:
+        exit_code = 130
+    finally:
+        try:
+            store.mark_interrupted_if_active(session_id)
+        except OmaRecallError:
+            pass
+    return exit_code
 
 
 def _dispatch(args: argparse.Namespace, store: SessionStore) -> dict[str, Any]:
@@ -229,6 +280,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     store = SessionStore(args.data_dir) if args.data_dir else SessionStore.default()
     try:
+        if args.command == "run-agent":
+            return _run_agent(store, args.session_id, args.agent_argv)
         payload = _dispatch(args, store)
     except OmaRecallError as exc:
         json.dump(

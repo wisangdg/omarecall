@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import json
+import sys
 import tempfile
 from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
@@ -24,6 +25,18 @@ class CliTests(TestCase):
             exit_code = main(["--data-dir", str(self.data_dir), *args])
         output = stdout.getvalue() if exit_code == 0 else stderr.getvalue()
         return exit_code, json.loads(output)
+
+    def test_agent_does_not_inherit_ignored_sigint(self) -> None:
+        _, created = self.run_cli(
+            "session", "create", "--project", str(self.project_dir),
+            "--agent", "codex", "--goal", "Signal probe",
+        )
+        code = main([
+            "--data-dir", str(self.data_dir), "run-agent", str(created["session"]["id"]),
+            "--", sys.executable, "-c",
+            "import signal; assert signal.getsignal(signal.SIGINT) != signal.SIG_IGN",
+        ])
+        self.assertEqual(0, code)
 
     def test_create_list_show_checkpoint_archive_and_reindex(self) -> None:
         create_code, created = self.run_cli(
@@ -241,6 +254,63 @@ class CliTests(TestCase):
         ))
         self.assertEqual(0, context_code)
         self.assertIn("Continue the dashboard", context["context"]["packet"])
+
+    def test_run_agent_finalizes_unfinished_session_as_interrupted(self) -> None:
+        _, created = self.run_cli(
+            "session",
+            "create",
+            "--project",
+            str(self.project_dir),
+            "--agent",
+            "codex",
+            "--goal",
+            "Agent run",
+        )
+        session_id = str(created["session"]["id"])
+
+        exit_code = main([
+            "--data-dir",
+            str(self.data_dir),
+            "run-agent",
+            session_id,
+            "--",
+            sys.executable,
+            "-c",
+            "raise SystemExit(4)",
+        ])
+
+        self.assertEqual(4, exit_code)
+        _, shown = self.run_cli("session", "show", session_id)
+        self.assertEqual("interrupted", shown["session"]["status"])
+
+    def test_run_agent_preserves_agent_completed_status(self) -> None:
+        _, created = self.run_cli(
+            "session",
+            "create",
+            "--project",
+            str(self.project_dir),
+            "--agent",
+            "codex",
+            "--goal",
+            "Agent run",
+        )
+        session_id = str(created["session"]["id"])
+        self.run_cli("checkpoint", session_id, "--status", "completed")
+
+        exit_code = main([
+            "--data-dir",
+            str(self.data_dir),
+            "run-agent",
+            session_id,
+            "--",
+            sys.executable,
+            "-c",
+            "pass",
+        ])
+
+        self.assertEqual(0, exit_code)
+        _, shown = self.run_cli("session", "show", session_id)
+        self.assertEqual("completed", shown["session"]["status"])
 
     def test_import_error_is_machine_readable(self) -> None:
         source = Path(self.temp_dir) / "broken.json"

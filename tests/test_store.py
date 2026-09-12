@@ -239,6 +239,21 @@ class SessionStoreTests(TestCase):
         self.assertIn("- manifest.json", note)
         self.assertIn("- QML not validated", note)
 
+    def test_mark_interrupted_if_active_only_closes_active_sessions(self) -> None:
+        active = self.create_session()
+        completed = self.create_session(
+            session_id="20260829T104012Z-c3d4",
+            now=self.now + timedelta(minutes=10),
+        )
+        self.store.add_checkpoint(completed.id, status="completed")
+        later = self.now + timedelta(minutes=20)
+
+        closed = self.store.mark_interrupted_if_active(active.id, now=later)
+        untouched = self.store.mark_interrupted_if_active(completed.id, now=later)
+
+        self.assertEqual("interrupted", closed.status)
+        self.assertEqual("completed", untouched.status)
+
     def test_pin_changes_metadata_and_relevant_priority(self) -> None:
         first = self.create_session()
         second = self.create_session(
